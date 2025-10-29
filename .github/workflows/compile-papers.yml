@@ -23,6 +23,8 @@ permissions:
 jobs:
   compile-pdfs:
     runs-on: ubuntu-latest
+    container:
+      image: texlive/texlive:latest
     
     steps:
       - name: Checkout repository
