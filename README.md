@@ -1,7 +1,13 @@
 # Zen Model Papers
 
+[![Compile Papers](https://github.com/zenlm/papers/actions/workflows/compile-papers.yml/badge.svg)](https://github.com/zenlm/papers/actions/workflows/compile-papers.yml)
+[![Papers](https://img.shields.io/badge/papers-22-blue)](https://github.com/zenlm/papers)
+[![License](https://img.shields.io/badge/license-CC--BY--4.0-green)](LICENSE)
+
 **Comprehensive research papers for the Zen model family**  
 *By Zoo Labs Foundation Inc (501c3 non-profit)*
+
+📥 **[Download All PDFs](https://github.com/zenlm/papers/releases/latest)**
 
 ---
 
