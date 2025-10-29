@@ -16,6 +16,10 @@ on:
       - '**.tex'
   workflow_dispatch:
 
+# Grant write permissions for creating releases and committing PDFs
+permissions:
+  contents: write
+
 jobs:
   compile-pdfs:
     runs-on: ubuntu-latest
