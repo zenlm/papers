@@ -133,17 +133,17 @@ Scribe & Zen-Scribe & 1.5B & 1.5B & Qwen3-ASR-Flash & ASR \\
 \textbf{Capability} & \multicolumn{5}{c|}{\textbf{Language}} & \multicolumn{2}{c|}{\textbf{Artist}} & \multicolumn{2}{c|}{\textbf{Designer}} & \textbf{Scribe} \\
 & Nano & Eco & Omni & Coder & Next & Artist & Edit & Think & Inst & ASR \\
 \midrule
-Text Generation & ✓ & ✓ & ✓ & ✓ & ✓ & × & × & ✓ & ✓ & × \\
-Code Generation & ★ & ★★ & ★★★ & ★★★★★ & ★★★★ & × & × & ★★★ & ★★★ & × \\
-Image Generation & × & × & × & × & × & ✓ & × & × & × & × \\
-Image Editing & × & × & × & × & × & × & ✓ & × & × & × \\
-Image Understanding & × & × & ✓ & × & × & ✓ & ✓ & ✓ & ✓ & × \\
-Design Analysis & × & × & × & × & × & ★★ & ★★ & ★★★★★ & ★★★★★ & × \\
-Speech Recognition & × & × & × & × & × & × & × & × & × & ✓ \\
-Thinking Mode & ✓ & ✓ & ✓ & ✓ & ✓ & × & × & ✓ & × & × \\
+Text Generation & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\times$ & $\times$ & $\checkmark$ & $\checkmark$ & $\times$ \\
+Code Generation & $\star$ & $\star\star$ & $\star\star\star$ & $\star\star\star\star\star$ & $\star\star\star\star$ & $\times$ & $\times$ & $\star\star\star$ & $\star\star\star$ & $\times$ \\
+Image Generation & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & $\checkmark$ & $\times$ & $\times$ & $\times$ & $\times$ \\
+Image Editing & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & $\checkmark$ & $\times$ & $\times$ & $\times$ \\
+Image Understanding & $\times$ & $\times$ & $\checkmark$ & $\times$ & $\times$ & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\times$ \\
+Design Analysis & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & $\star\star$ & $\star\star$ & $\star\star\star\star\star$ & $\star\star\star\star\star$ & $\times$ \\
+Speech Recognition & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & $\checkmark$ \\
+Thinking Mode & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\times$ & $\times$ & $\checkmark$ & $\times$ & $\times$ \\
 \bottomrule
 \end{tabular}
-\caption{Model Capability Matrix (✓ = Supported, × = Not Supported, ★ = Capability Level)}
+\caption{Model Capability Matrix ($\checkmark$ = Supported, $\times$ = Not Supported, $\star$ = Capability Level)}
 \end{table}
 
 \section{Technical Architecture}
@@ -420,7 +420,7 @@ The Zen family achieves unprecedented efficiency:
 \centering
 \begin{tabular}{lrrr}
 \toprule
-\textbf{Model} & \textbf{Energy/Token} & \textbf{CO₂/M Inferences} & \textbf{Efficiency Gain} \\
+\textbf{Model} & \textbf{Energy/Token} & \textbf{CO$_2$/M Inferences} & \textbf{Efficiency Gain} \\
 \midrule
 Zen-Nano & 0.001 kWh & 0.02 kg & 98\% \\
 Zen-Eco & 0.003 kWh & 0.05 kg & 95\% \\
@@ -436,7 +436,7 @@ All Models (Avg) & 0.010 kWh & 0.23 kg & 90\% \\
 \subsection{Annual Impact (1M Users)}
 \begin{itemize}
     \item \textbf{Energy Saved}: 45 GWh (equivalent to 10,000 homes)
-    \item \textbf{CO₂ Reduced}: 5,400 tons (equivalent to 1,200 cars)
+    \item \textbf{CO$_2$ Reduced}: 5,400 tons (equivalent to 1,200 cars)
     \item \textbf{Cost Savings}: \$2.7M in compute costs
     \item \textbf{Water Conservation}: 2.3M gallons saved in cooling
 \end{itemize}
