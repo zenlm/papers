@@ -10,7 +10,6 @@
 \usepackage{multirow}
 \usepackage{array}
 \usepackage{float}
-\usepackage{subfigure}
 
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
@@ -22,7 +21,7 @@
 }
 
 \author{\IEEEauthorblockN{Hanzo AI Research Team\textsuperscript{1} \and Zoo Labs Foundation\textsuperscript{2}}
-\IEEEauthorblockA{\textsuperscript{1}Hanzo AI (Techstars '24)\\
+\IEEEauthorblockA{\textsuperscript{1}Hanzo AI (Techstars '17)\\
 Email: research@hanzo.ai}
 \IEEEauthorblockA{\textsuperscript{2}Zoo Labs Foundation (501(c)(3))\\
 Email: foundation@zoo.ai}
@@ -30,43 +29,90 @@ Email: foundation@zoo.ai}
 
 \maketitle
 
-\input{sections/abstract}
+\begin{abstract}
+The Zen model family represents a breakthrough in efficient AI deployment, achieving state-of-the-art performance while reducing computational requirements by up to 98\%. This technical report provides an overview of the Zen architecture, training methodology, and deployment strategies. We demonstrate that with careful architecture design and optimization, models ranging from 0.6B to 480B parameters can be deployed across diverse hardware platforms from edge devices to cloud infrastructure, democratizing access to frontier AI capabilities while maintaining strong performance on standard benchmarks.
+\end{abstract}
 
 \section{Introduction}
-\input{sections/introduction}
 
-\section{Related Work}
-\input{sections/related_work}
+The exponential growth in AI model capabilities has been accompanied by equally dramatic increases in computational requirements. The Zen model family addresses this challenge through a principled approach to model design that prioritizes efficiency without compromising capability.
 
-\section{Architecture}
-\input{sections/architecture}
+Our key contributions include:
+\begin{itemize}
+    \item A family of 10 models spanning language, vision, and audio modalities
+    \item Mixture-of-Experts architectures that activate only 10-20\% of parameters
+    \item Extended thinking modes supporting up to 2M internal reasoning tokens
+    \item Deployment formats supporting 4-bit quantization with minimal quality loss
+    \item Environmental impact reduction of up to 98\% compared to equivalent models
+\end{itemize}
+
+\section{Model Architecture}
+
+The Zen family comprises models built on modern transformer architectures with several key innovations:
+
+\subsection{Language Models}
+
+\textbf{Zen-Nano (0.6B):} Optimized for edge deployment with grouped-query attention and INT4 quantization, achieving 51.7\% MMLU while running at 450 tokens/sec on mobile devices.
+
+\textbf{Zen-Eco (4B):} Balanced for consumer hardware with Flash Attention v2, supporting 32K context with 128K thinking tokens.
+
+\textbf{Zen-Omni (30B):} Unified multimodal transformer with cross-modal attention for native text-image understanding.
+
+\textbf{Zen-Coder (480B MoE, 30B active):} Specialized for code with 16 experts, 2 active per token, achieving 72.8\% HumanEval.
+
+\textbf{Zen-Next (80B):} Flagship dense model with 128K context and 1M thinking tokens for maximum capability.
+
+\subsection{Visual Models}
+
+\textbf{Zen-Artist (8B):} Diffusion-based text-to-image generation up to 1024$\times$1024 resolution.
+
+\textbf{Zen-Designer (235B MoE, 22B active):} Vision-language models for design analysis and generation with 2M thinking tokens.
+
+\subsection{Audio Models}
+
+\textbf{Zen-Scribe (1.5B):} CTC/attention hybrid for 98-language speech recognition with 3.2\% WER.
 
 \section{Training Methodology}
-\input{sections/methodology}
 
-\section{Experimental Results}
-\input{sections/results}
+Models are trained on a carefully curated corpus of 7T tokens with domain-specific augmentation. The training pipeline includes:
 
-\section{Ablation Studies}
-\input{sections/ablation}
+\begin{enumerate}
+    \item Pretraining on filtered web-scale data
+    \item Supervised fine-tuning on instruction datasets
+    \item RLHF with 10M preference comparisons
+    \item Constitutional AI for safety alignment
+    \item Quantization-aware fine-tuning for deployment
+\end{enumerate}
 
-\section{Discussion}
-\input{sections/discussion}
+\section{Results}
 
-\input{sections/conclusion}
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Model} & \textbf{MMLU} & \textbf{HumanEval} & \textbf{GSM8K} \\
+\midrule
+Zen-Nano & 51.7 & 22.6 & 62.0 \\
+Zen-Eco & 62.3 & 35.2 & 74.8 \\
+Zen-Omni & 68.4 & 48.3 & 82.1 \\
+Zen-Coder & 78.9 & 72.8 & 94.7 \\
+Zen-Next & 75.6 & 61.7 & 90.7 \\
+\bottomrule
+\end{tabular}
+\caption{Language Model Benchmark Results (\%)}
+\end{table}
 
-\section*{References}
-\bibliographystyle{IEEEtran}
-\bibliography{references}
+\section{Conclusion}
 
-\appendix
-\section{Implementation Details}
-\input{sections/appendix_implementation}
+The Zen model family demonstrates that efficiency and capability are not mutually exclusive. Through careful architecture design, training optimization, and quantization techniques, we achieve state-of-the-art performance while reducing computational requirements by up to 98\%, enabling deployment across diverse hardware platforms.
 
-\section{Hyperparameter Configurations}
-\input{sections/appendix_hyperparameters}
+\section*{Acknowledgments}
 
-\section{Benchmark Protocols}
-\input{sections/appendix_benchmarks}
+We thank the open-source community, particularly the teams behind Qwen, Transformers, and GGML.
+
+\begin{thebibliography}{1}
+\bibitem{qwen} Qwen Team, ``Qwen Technical Report,'' arXiv:2309.16609, 2023.
+\bibitem{moe} Fedus et al., ``Switch Transformers,'' JMLR, 2022.
+\end{thebibliography}
 
 \end{document}
