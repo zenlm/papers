@@ -6,18 +6,18 @@ This document tracks the proper dating of Zen model papers based on when models 
 
 Papers reflect:
 1. **Model Release Date**: When the model was first published on Hugging Face
-2. **Architecture Version**: Qwen3 architecture baseline
+2. **Architecture Version**: Zen MoDE (Mixture of Distilled Experts) baseline
 3. **Major Updates**: Significant capability enhancements
 
 All papers use **versioning**: `vYYYY.MM` (e.g., v2024.12 for December 2024)
 
 ---
 
-## 🧠 Zen Model Family Overview
+## Zen Model Family Overview
 
 ### Core Philosophy
-Zen models are based on **Qwen3 architecture** (NOT Qwen2), emphasizing:
-- Native 7680-dimensional embeddings (vs 3584 in Qwen2)
+Zen models use **Zen MoDE (Mixture of Distilled Experts)** architecture, emphasizing:
+- Native 7680-dimensional embeddings for DSO canonical space
 - Semantic alignment for DSO (Decentralized Semantic Optimization)
 - BitDelta compression (31.87× ratio)
 - Byzantine-robust consensus
@@ -224,15 +224,25 @@ Zen models are based on **Qwen3 architecture** (NOT Qwen2), emphasizing:
 
 ---
 
-## 📊 Model Family Statistics
+## Model Family Statistics
 
-| Category | Models | Status | Avg Size |
-|----------|--------|--------|----------|
-| **Foundation** | 2 | Published | N/A |
-| **Core Production** | 6 | Published | 4B-32B |
-| **Specialized** | 6 | Published | Varies |
-| **Extended** | 8 | Published | Varies |
-| **Total** | **22 models** | ✅ All documented | |
+| Category | Papers | Status |
+|----------|--------|--------|
+| **Foundation Papers** | 7 | Published |
+| **Core Models** | 8 | Published |
+| **Zen4 Generation** | 6 | Published |
+| **Code Models** | 6 | Published |
+| **Zen3 Specialized** | 5 | Published |
+| **Vision & Image** | 5 | Published |
+| **Video Models** | 4 | Published |
+| **Audio & Speech** | 7 | Published |
+| **Multimodal & Creative** | 3 | Published |
+| **Safety** | 3 | Published |
+| **Infrastructure** | 6 | Published |
+| **Research** | 12 | Published |
+| **Protocols & Standards** | 3 | Published |
+| **Domain Applications** | 5 | Published |
+| **Total** | **80 papers** | All documented |
 
 ---
 
@@ -249,9 +259,9 @@ Releases: Automatic with all PDFs
 ```
 
 **Status**:
-- ✅ Zen-Reranker PDF compiled (225KB, 12 pages)
-- 🔄 Remaining 21 papers compiling via CI
-- ⏳ Expected completion: 8-12 minutes
+- 80 papers committed and pushed to main
+- All papers compiling via CI (GitHub Actions)
+- PDFs available in /pdfs/ after CI completes
 
 ---
 
@@ -289,14 +299,19 @@ Each paper includes:
 
 ---
 
-## 🚀 Publication Timeline
+## Publication Timeline
 
 - **October 2024**: Zen-Nano (0.6B edge model)
 - **November 2024**: Zen-Coder, Zen-Eco, Zen-Scribe
-- **December 2024**: Zen-Artist family, Zen-Guard, Core papers
-- **January 2025**: Zen-Omni, Zen-Next, Extended family (3D, Foley, etc.)
-- **February 2025**: Zen-World, Zen-Voyager
-- **October 2025**: Zen-Reranker (DSO/BitDelta)
+- **December 2024**: Zen-Artist family, Zen-Guard, Core papers (zen-base, zen-technical-paper)
+- **January 2025**: Zen-Omni, Zen-Next, Extended family (3D, Foley, Musician, Director, Agent, World)
+- **February 2025**: Zen-World, Zen-Voyager, Zen-VL, Zen-Coder-Flash, Zen-Inference-Optimization
+- **March 2025**: Zen3 family (Nano, Omni, VL, Guard, Embedding), Zen-Code, Zen-Dub, Zen-Video-I2V
+- **April 2025**: Zen-Live, Zen-Guard-Gen/Stream, Context Extension, Fine-tuning, Architecture papers
+- **May 2025**: Domain papers (Medical, Financial, Legal, Privacy), Reward Modeling, Distillation
+- **June 2025**: Protocols (ASO/DSO), Zen4 generation, Benchmark Suite, Multilingual
+- **July–August 2025**: Zen4 family (Pro, Max, Ultra, Mini, Thinking), Zen4-Coder family
+- **October 2025**: Zen-Reranker (DSO/BitDelta, native 7680-dim)
 
 ---
 
@@ -323,7 +338,7 @@ Each paper includes:
 
 ---
 
-**Last Updated**: October 29, 2025
-**Status**: 1 PDF compiled, 21 in CI pipeline
+**Last Updated**: March 1, 2026
+**Status**: 80 papers committed, CI compiling PDFs
 **Repository**: github.com/zenlm/papers
 **CI Build**: [![Compile Papers](https://github.com/zenlm/papers/actions/workflows/compile-papers.yml/badge.svg)](https://github.com/zenlm/papers/actions/workflows/compile-papers.yml)
