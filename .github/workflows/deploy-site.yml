@@ -3,9 +3,6 @@ name: Deploy Papers Site
 on:
   push:
     branches: [main]
-    paths:
-      - 'site/**'
-      - '.github/workflows/deploy-site.yml'
   workflow_dispatch:
 
 permissions:
