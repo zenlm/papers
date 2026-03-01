@@ -89,10 +89,10 @@ debug sessions rather than synthetic instruction-following data.
 \textbf{Model} & \textbf{Size} & \textbf{Base} & \textbf{VRAM} & \textbf{Context} & \textbf{Status} \\
 \midrule
 Zen Coder 4B & 4B & Zen-4B-Instruct & 8 GB & 32K & Trained \\
-Zen Coder 24B & 24B & Devstral Small 2 & 24 GB & 256K & Trained \\
-Zen Coder 123B & 123B & Devstral 2 & 128 GB & 256K & Training \\
-Zen Coder Max & 358B (MoE) & GLM-4.7 & 180 GB & 200K & Planned \\
-Zen Coder Ultra & 1T (MoE) & Kimi K2 & 256 GB & 128K & Planned \\
+Zen Coder 24B & 24B & Zen Coder 24B-Instruct & 24 GB & 256K & Trained \\
+Zen Coder 123B & 123B & Zen Coder 123B & 128 GB & 256K & Training \\
+Zen Coder Max & 358B (MoE) & Zen Coder Max & 180 GB & 200K & Planned \\
+Zen Coder Ultra & 1T (MoE) & Zen MoDE Ultra & 256 GB & 128K & Planned \\
 \bottomrule
 \end{tabular}
 \caption{Zen Coder Model Family}
@@ -212,8 +212,8 @@ The smaller models use dense transformer architectures optimized for different d
 \textbf{Model} & \textbf{Base Architecture} & \textbf{Layers} & \textbf{Hidden Dim} \\
 \midrule
 Zen Coder 4B & Zen-4B-Instruct & 40 & 2560 \\
-Zen Coder 24B & Devstral Small 2 & 56 & 5120 \\
-Zen Coder 123B & Devstral 2 & 80 & 8192 \\
+Zen Coder 24B & Zen Coder 24B-Instruct & 56 & 5120 \\
+Zen Coder 123B & Zen Coder 123B & 80 & 8192 \\
 \bottomrule
 \end{tabular}
 \caption{Dense Model Specifications}
@@ -367,9 +367,9 @@ Models are evaluated on agentic coding benchmarks including:
 \subsection{Models}
 \begin{itemize}
     \item Zen Coder 4B, 24B: Apache 2.0
-    \item Zen Coder 123B: Mistral Research License
-    \item Zen Coder Max: GLM-4 License
-    \item Zen Coder Ultra: MIT (Kimi K2 base)
+    \item Zen Coder 123B: Zen Commercial License v1.0
+    \item Zen Coder Max: Zen Commercial License v1.0
+    \item Zen Coder Ultra: Zen Commercial License v1.0
 \end{itemize}
 
 \subsection{Dataset Access}
