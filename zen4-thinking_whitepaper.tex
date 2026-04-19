@@ -5,7 +5,7 @@
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{listings}
-\usepackage{color}
+\usepackage{xcolor}
 \usepackage{booktabs}
 \usepackage{float}
 \usepackage{geometry}
@@ -45,7 +45,7 @@
 }
 
 \author{
-    Zach Kelling\thanks{zach@lux.network} \\
+    Antje Worring, Zach Kelling\thanks{zach@lux.network} \\
     \texttt{research@hanzo.ai} \\
     \\
     Zoo Labs Foundation \\
@@ -144,7 +144,7 @@ or the caller can enforce \texttt{thinking=enabled} or \texttt{thinking=disabled
 \midrule
 Total Parameters          & 72.7B \\
 Active Parameters         & 72.7B (dense) \\
-Architecture              & Zen MoDE Hybrid Transformer \\
+Architecture              & Hybrid Transformer \\
 Attention Mechanism       & Hierarchical Hybrid Attention (HHA) \\
 Local Window Size         & 8,192 tokens \\
 Global Anchor Tokens      & 1,024 per layer \\
@@ -535,8 +535,20 @@ We thank the mathematical olympiad community whose publicly available problem se
 solutions formed the foundation of the cold-start SFT corpus, the Zoo Labs Foundation
 formal reasoning research team, and the Hanzo AI post-training infrastructure team.
 
-\bibliographystyle{plain}
-\bibliography{references}
+\begin{thebibliography}{99}
+\bibitem{vaswani2017attention} Vaswani, A. et al. (2017). Attention Is All You Need. NeurIPS 2017.
+\bibitem{brown2020language} Brown, T. et al. (2020). Language Models are Few-Shot Learners. NeurIPS 2020.
+\bibitem{ouyang2022training} Ouyang, L. et al. (2022). Training Language Models to Follow Instructions with Human Feedback. NeurIPS 2022.
+\bibitem{wei2022chain} Wei, J. et al. (2022). Chain-of-Thought Prompting Elicits Reasoning in Large Language Models. NeurIPS 2022.
+\bibitem{wang2022selfconsistency} Wang, X. et al. (2022). Self-Consistency Improves Chain of Thought Reasoning in Language Models. ICLR 2023.
+\bibitem{lightman2023let} Lightman, H. et al. (2023). Let's Verify Step by Step. arXiv:2305.20050.
+\bibitem{nye2021show} Nye, M. et al. (2021). Show Your Work: Scratchpads for Intermediate Computation with Language Models. arXiv:2112.00114.
+\bibitem{snell2024scaling} Snell, C. et al. (2024). Scaling LLM Test-Time Compute Optimally Can Be More Effective Than Scaling Model Parameters. arXiv:2408.03314.
+\bibitem{shao2024grpo} Shao, Z. et al. (2024). DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models. arXiv:2402.03300.
+\bibitem{schulman2017proximal} Schulman, J. et al. (2017). Proximal Policy Optimization Algorithms. arXiv:1707.06347.
+\bibitem{singhal2023long} Singhal, K. et al. (2023). A Long Way to Go: Investigating Length Correlations in RLHF. arXiv:2310.03716.
+\bibitem{chowdhery2023palm} Chowdhery, A. et al. (2023). PaLM: Scaling Language Modeling with Pathways. JMLR 2023.
+\end{thebibliography}
 
 \appendix
 

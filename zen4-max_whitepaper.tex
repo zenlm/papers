@@ -5,7 +5,7 @@
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{listings}
-\usepackage{color}
+\usepackage{xcolor}
 \usepackage{booktabs}
 \usepackage{float}
 \usepackage{geometry}
@@ -45,7 +45,7 @@
 }
 
 \author{
-    Zach Kelling\thanks{zach@lux.network} \\
+    Antje Worring, Zach Kelling\thanks{zach@lux.network} \\
     \texttt{research@hanzo.ai} \\
     \\
     Zoo Labs Foundation \\
@@ -59,7 +59,7 @@
 \maketitle
 
 \begin{abstract}
-We present \textbf{Zen4-Max}, a 480B total parameter Mixture-of-Distilled-Experts model
+We present \textbf{Zen4-Max}, a 480B total parameter Mixture-of-Experts (MoE) model
 activating 48B parameters per token, optimized for research-grade scientific reasoning,
 mathematical proof verification, and complex long-horizon analysis. Zen4-Max achieves
 93.4\% on MMLU, 90.1\% on MATH, 79.8\% on GPQA Diamond, 94.7\% on HumanEval, and
@@ -100,7 +100,7 @@ the capability ceiling of the Zen4 family on reasoning-intensive tasks.
     \item \textbf{Proof-Augmented Training (PAT)}: A training methodology incorporating
     formal verification signals (lean4, isabelle, and symbolic computation results) into
     the pretraining corpus and using verifier outputs as post-training rewards.
-    \item \textbf{480B/48B MoDE}: 480B total parameter MoE with 48B active, using 64 experts
+    \item \textbf{480B/48B MoE}: 480B total parameter MoE with 48B active, using 64 experts
     per layer with top-6 routing, optimized for research-domain specialization.
     \item \textbf{FrontierMath Performance}: 61.2\% on FrontierMath, representing a significant
     advance on research-mathematics benchmarks that are resistant to pattern matching.
@@ -120,7 +120,7 @@ the capability ceiling of the Zen4 family on reasoning-intensive tasks.
 \midrule
 Total Parameters          & 480B \\
 Active Parameters         & 48B per token \\
-Architecture              & Zen MoDE (Mixture of Distilled Experts) \\
+Architecture              & Mixture of Experts (MoE) \\
 Number of Layers          & 80 \\
 Dense Base Layers         & 24 \\
 MoE Upper Layers          & 56 \\
@@ -454,7 +454,7 @@ unsupported assertions.
 Zen4-Max establishes the highest standard for research-grade AI assistance at a practical
 inference cost. Through Proof-Augmented Training, it internalizes formal reasoning
 structure during pretraining rather than only imitating it during fine-tuning. The 480B/48B
-Zen MoDE architecture concentrates domain expertise in research clusters that are
+Mixture-of-Experts architecture concentrates domain expertise in research clusters that are
 selectively activated by the routing mechanism for each token. With 90.1\% on MATH,
 79.8\% on GPQA Diamond, and 61.2\% on FrontierMath, Zen4-Max is the recommended choice
 for research institutions, quantitative finance, pharmaceutical discovery, and any
@@ -466,8 +466,20 @@ We thank the formal methods research community whose open Lean4 and Isabelle cor
 made Proof-Augmented Training possible, the Zoo Labs Foundation science team for
 domain evaluation design, and the Hanzo AI infrastructure team for the training cluster.
 
-\bibliographystyle{plain}
-\bibliography{references}
+\begin{thebibliography}{99}
+\bibitem{vaswani2017attention} Vaswani, A. et al. (2017). Attention Is All You Need. NeurIPS 2017.
+\bibitem{brown2020language} Brown, T. et al. (2020). Language Models are Few-Shot Learners. NeurIPS 2020.
+\bibitem{shazeer2017outrageously} Shazeer, N. et al. (2017). Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer. ICLR 2017.
+\bibitem{fedus2022switch} Fedus, W. et al. (2022). Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity. JMLR 2022.
+\bibitem{hoffmann2022training} Hoffmann, J. et al. (2022). Training Compute-Optimal Large Language Models. NeurIPS 2022.
+\bibitem{hinton2015distilling} Hinton, G., Vinyals, O. and Dean, J. (2015). Distilling the Knowledge in a Neural Network. arXiv:1503.02531.
+\bibitem{glazer2024frontiermath} Glazer, E. et al. (2024). FrontierMath: A Benchmark for Evaluating Advanced Mathematical Reasoning in AI. arXiv:2411.04872.
+\bibitem{polu2022formal} Polu, S. et al. (2022). Formal Mathematics Statement Curriculum Learning. ICLR 2023.
+\bibitem{lightman2023let} Lightman, H. et al. (2023). Let's Verify Step by Step. arXiv:2305.20050.
+\bibitem{artetxe2021efficient} Artetxe, M. et al. (2021). Efficient Large Scale Language Modeling with Mixtures of Experts. EMNLP 2022.
+\bibitem{chowdhery2023palm} Chowdhery, A. et al. (2023). PaLM: Scaling Language Modeling with Pathways. JMLR 2023.
+\bibitem{romero2014fitnets} Romero, A. et al. (2015). FitNets: Hints for Thin Deep Nets. ICLR 2015.
+\end{thebibliography}
 
 \appendix
 

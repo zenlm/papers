@@ -5,7 +5,7 @@
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{listings}
-\usepackage{color}
+\usepackage{xcolor}
 \usepackage{booktabs}
 \usepackage{float}
 \usepackage{geometry}
@@ -45,7 +45,7 @@
 }
 
 \author{
-    Zach Kelling\thanks{zach@lux.network} \\
+    Antje Worring, Zach Kelling\thanks{zach@lux.network} \\
     \texttt{research@hanzo.ai} \\
     \\
     Zoo Labs Foundation \\
@@ -60,7 +60,7 @@
 
 \begin{abstract}
 We present \textbf{Zen4-Ultra}, the largest model in the Zen4 family with 1 trillion total
-parameters organized as a Mixture-of-Distilled-Experts (MoDE) architecture activating
+parameters organized as a Mixture-of-Experts (MoE) architecture activating
 96 billion parameters per token. Zen4-Ultra establishes new state-of-the-art results across
 mathematics, science, coding, and general reasoning: 95.2\% on MMLU, 92.8\% on MATH,
 96.1\% on HumanEval, 82.4\% on GPQA Diamond, and 91.3\% on MMMU. The model operates
@@ -81,8 +81,8 @@ Mixture-of-Experts (MoE) architectures decouple total parameter count from per-t
 inference cost, enabling trillion-parameter models to operate at the inference cost of
 dense 96B models. This decoupling is the foundational premise of Zen4-Ultra.
 
-The Zen MoDE (Mixture of Distilled Experts) framework takes this further: individual
-experts within the trillion-parameter pool are not trained jointly from scratch but are
+The Zen distilled fine-tuning framework takes this further: individual
+experts within the trillion-parameter Mixture-of-Experts pool are not trained jointly from scratch but are
 specialized through targeted distillation from domain-expert teacher models. A
 mathematics expert within Zen4-Ultra has been distilled specifically from a mathematically
 superior teacher, rather than emerging through generalist pretraining followed by routing
@@ -90,14 +90,14 @@ competition. This targeted specialization yields measurably better expert qualit
 matched parameter count.
 
 Zen4-Ultra achieves the highest scores in the Zen4 family across every evaluated benchmark,
-demonstrating that Zen MoDE at trillion-parameter scale is a reliable path to frontier
+demonstrating that the MoE architecture at trillion-parameter scale is a reliable path to frontier
 capability without the inference costs that fully dense trillion-parameter models would
 require.
 
 \subsection{Key Contributions}
 
 \begin{itemize}
-    \item \textbf{Trillion-Parameter Zen MoDE}: 1T total parameters, 96B active per token,
+    \item \textbf{Trillion-Parameter MoE}: 1T total parameters, 96B active per token,
     organized as 128 experts per layer with top-8 routing.
     \item \textbf{Targeted Expert Distillation}: Each expert cluster distilled from a
     domain-specialized teacher, producing higher-quality specialization than joint training.
@@ -121,7 +121,7 @@ require.
 \midrule
 Total Parameters           & 1.02T \\
 Active Parameters          & 96B per token \\
-Architecture               & Zen MoDE (Mixture of Distilled Experts) \\
+Architecture               & Mixture of Experts (MoE) \\
 Number of Layers           & 94 \\
 Attention Mechanism        & Hierarchical Hybrid Attention (HHA) \\
 Local Window Size          & 16,384 tokens \\
@@ -144,14 +144,14 @@ Activation                 & SwiGLU \\
 \caption{Zen4-Ultra Architecture Specifications}
 \end{table}
 
-\subsection{Mixture of Distilled Experts}
+\subsection{Expert Distillation within MoE}
 
 Standard MoE architectures route tokens to experts that are all trained jointly on the
 same pretraining corpus. Expert specialization emerges through competition during training
 and is often incomplete: ablation studies consistently show that many experts in vanilla
 MoE models are largely redundant.
 
-The Zen MoDE framework addresses this through three mechanisms:
+The Zen distilled fine-tuning framework addresses this through three mechanisms:
 
 \subsubsection{Expert Domain Assignment}
 
@@ -455,7 +455,7 @@ safety alignment, following the RMU methodology.
 
 \section{Conclusion}
 
-Zen4-Ultra demonstrates that the Zen MoDE framework scales reliably to one trillion total
+Zen4-Ultra demonstrates that the MoE architecture with distilled fine-tuning scales reliably to one trillion total
 parameters while maintaining practical inference through sparse activation of 96B parameters
 per token. Targeted expert distillation produces genuinely specialized sub-networks that
 outperform equivalent jointly-trained MoE experts, particularly on mathematics and scientific
@@ -469,8 +469,20 @@ We thank the distributed systems teams who built and maintained the 16,384-H100 
 cluster, the annotation teams who produced the post-training datasets, and the evaluation
 teams at Zoo Labs Foundation who designed and administered the safety evaluations.
 
-\bibliographystyle{plain}
-\bibliography{references}
+\begin{thebibliography}{99}
+\bibitem{vaswani2017attention} Vaswani, A. et al. (2017). Attention Is All You Need. NeurIPS 2017.
+\bibitem{brown2020language} Brown, T. et al. (2020). Language Models are Few-Shot Learners. NeurIPS 2020.
+\bibitem{shazeer2017outrageously} Shazeer, N. et al. (2017). Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer. ICLR 2017.
+\bibitem{fedus2022switch} Fedus, W. et al. (2022). Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity. JMLR 2022.
+\bibitem{hinton2015distilling} Hinton, G., Vinyals, O. and Dean, J. (2015). Distilling the Knowledge in a Neural Network. arXiv:1503.02531.
+\bibitem{romero2014fitnets} Romero, A. et al. (2015). FitNets: Hints for Thin Deep Nets. ICLR 2015.
+\bibitem{lepikhin2021gshard} Lepikhin, D. et al. (2021). GShard: Scaling Giant Models with Conditional Computation and Automatic Sharding. ICLR 2021.
+\bibitem{artetxe2021efficient} Artetxe, M. et al. (2021). Efficient Large Scale Language Modeling with Mixtures of Experts. EMNLP 2022.
+\bibitem{yue2024mmmu} Yue, X. et al. (2024). MMMU: A Massive Multi-discipline Multimodal Understanding and Reasoning Benchmark. CVPR 2024.
+\bibitem{hoffmann2022training} Hoffmann, J. et al. (2022). Training Compute-Optimal Large Language Models. NeurIPS 2022.
+\bibitem{chowdhery2023palm} Chowdhery, A. et al. (2023). PaLM: Scaling Language Modeling with Pathways. JMLR 2023.
+\bibitem{rafailov2023direct} Rafailov, R. et al. (2023). Direct Preference Optimization: Your Language Model is Secretly a Reward Model. NeurIPS 2023.
+\end{thebibliography}
 
 \appendix
 

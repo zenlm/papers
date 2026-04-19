@@ -5,7 +5,7 @@
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{listings}
-\usepackage{color}
+\usepackage{xcolor}
 \usepackage{booktabs}
 \usepackage{float}
 \usepackage{geometry}
@@ -45,7 +45,7 @@
 }
 
 \author{
-    Zach Kelling\thanks{zach@lux.network} \\
+    Antje Worring, Zach Kelling\thanks{zach@lux.network} \\
     \texttt{research@hanzo.ai} \\
     \\
     Zoo Labs Foundation \\
@@ -67,7 +67,7 @@ on IFEval, while sustaining 1,200 tokens per second on a single NVIDIA RTX 4090 
 quantization. Key advances over its predecessor include a redesigned tokenizer with
 higher text compression, an optimized attention architecture with 32K native context, and
 a substantially improved post-training corpus with 3$\times$ more instruction diversity.
-Zen4-Mini demonstrates that Zen MoDE distillation is highly effective even at compact
+Zen4-Mini demonstrates that distilled fine-tuning of a Mixture-of-Experts base is highly effective even at compact
 parameter budgets, closing a large fraction of the gap between 4B and 14B models.
 \end{abstract}
 
@@ -83,7 +83,7 @@ of these environments is a distinct engineering challenge from building the larg
 models for maximum benchmark scores.
 
 Zen4-Mini addresses this challenge by applying the full Zen4 generation technology stack ---
-the Zen MoDE distillation framework, native tool pretraining, improved post-training
+the distilled fine-tuning framework, native tool pretraining, improved post-training
 pipeline --- to the compact 4B parameter class. The result is a model that outperforms
 its predecessor Zen-Eco by substantial margins across all benchmarks while remaining
 deployable on consumer hardware:
@@ -148,7 +148,7 @@ Zen4-Mini follows three design principles specific to the compact model class:
 \midrule
 Total Parameters         & 4.1B \\
 Active Parameters        & 4.1B (dense) \\
-Architecture             & Zen MoDE Compact Transformer \\
+Architecture             & Compact Transformer \\
 Attention Mechanism      & Full sliding-window attention \\
 Context Length           & 32,768 tokens (32K) \\
 Hidden Dimension         & 2,560 \\
@@ -198,7 +198,7 @@ per token on English text (vs 3.9 for the Zen-Eco tokenizer) and 5.8 characters 
 on Python code (vs 5.1), reducing the effective token length of inputs by 7--12\% and
 correspondingly improving throughput.
 
-\subsection{Zen MoDE Distillation at 4B}
+\subsection{Distilled Fine-Tuning at 4B}
 
 At 4B parameters, distillation presents a capacity mismatch challenge: the teacher models
 used for larger Zen4 models have individual layers that are larger than the entire student.
@@ -380,7 +380,7 @@ carefully. TinyLlama \cite{zhang2024tinyllama} demonstrated that 1.1B models tra
 3T tokens could be surprisingly capable. Phi-series models \cite{gunasekar2023textbooks}
 showed that data quality (synthetic ``textbook'' data) matters more than data quantity
 for compact models. Zen4-Mini builds on both insights: the 10T pretraining run uses
-a higher-quality filtered corpus than prior compact models, and the Zen MoDE distillation
+a higher-quality filtered corpus than prior compact models, and the distilled fine-tuning
 framework serves as a structured quality amplifier on top of the base data.
 
 SmolLM \cite{allal2024smollm} and similar efforts have pushed the efficiency frontier
@@ -498,8 +498,21 @@ where inference cost or hardware availability is a primary constraint.
 We thank the llama.cpp, mlx-lm, and Ollama communities whose work makes compact model
 deployment practical, and the Hanzo AI team for the distillation infrastructure.
 
-\bibliographystyle{plain}
-\bibliography{references}
+\begin{thebibliography}{99}
+\bibitem{vaswani2017attention} Vaswani, A. et al. (2017). Attention Is All You Need. NeurIPS 2017.
+\bibitem{brown2020language} Brown, T. et al. (2020). Language Models are Few-Shot Learners. NeurIPS 2020.
+\bibitem{ouyang2022training} Ouyang, L. et al. (2022). Training Language Models to Follow Instructions with Human Feedback. NeurIPS 2022.
+\bibitem{touvron2023llama} Touvron, H. et al. (2023). LLaMA: Open and Efficient Foundation Language Models. arXiv:2302.13971.
+\bibitem{hoffmann2022training} Hoffmann, J. et al. (2022). Training Compute-Optimal Large Language Models. NeurIPS 2022.
+\bibitem{dettmers2023qlora} Dettmers, T. et al. (2023). QLoRA: Efficient Finetuning of Quantized Language Models. NeurIPS 2023.
+\bibitem{hu2021lora} Hu, E. et al. (2021). LoRA: Low-Rank Adaptation of Large Language Models. ICLR 2022.
+\bibitem{frantar2022gptq} Frantar, E. et al. (2022). GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers. ICLR 2023.
+\bibitem{hinton2015distilling} Hinton, G., Vinyals, O. and Dean, J. (2015). Distilling the Knowledge in a Neural Network. arXiv:1503.02531.
+\bibitem{raffel2020exploring} Raffel, C. et al. (2020). Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer. JMLR 2020.
+\bibitem{zhang2024tinyllama} Zhang, P. et al. (2024). TinyLlama: An Open-Source Small Language Model. arXiv:2401.02385.
+\bibitem{gunasekar2023textbooks} Gunasekar, S. et al. (2023). Textbooks Are All You Need. arXiv:2306.11644.
+\bibitem{allal2024smollm} Allal, L.B. et al. (2024). SmolLM: A Family of Small Language Models. arXiv:2407.05483.
+\end{thebibliography}
 
 \appendix
 

@@ -25,7 +25,7 @@
 \title{\textbf{Zen4-Coder-Pro: Advanced Agentic Software Engineering\\
 at Full Lifecycle Scale}\\[0.5em]
 \large Technical Whitepaper v2026.02}
-\author{Zen LM Research Team\\
+\author{Antje Worring, Zach Kelling \\ Zen LM Research Team\\
 \texttt{research@zenlm.org}\\
 \href{https://papers.zenlm.org}{papers.zenlm.org}}
 \date{February 2026}
@@ -34,7 +34,7 @@ at Full Lifecycle Scale}\\[0.5em]
 \maketitle
 
 \begin{abstract}
-Zen4-Coder-Pro extends the Zen4-Coder family to 72 billion parameters with capabilities spanning the complete software engineering lifecycle: architecture design, implementation, testing, documentation, security review, and deployment. Built on the Zen MoDE (Mixture of Distilled Experts) architecture with an expanded expert pool and a reinforced agentic training protocol, Zen4-Coder-Pro achieves 96.8\% on HumanEval, 67.3\% on SWE-bench, 71.2\% on SWE-bench Verified, and 91.4\% on LiveCodeBench. Beyond benchmark performance, Zen4-Coder-Pro demonstrates end-to-end project development capability: given a specification, it can design system architecture, implement all components, write comprehensive tests, generate documentation, and produce CI/CD pipeline configurations. This paper describes the model's architecture, training protocol, capability profile, and deployment considerations.
+Zen4-Coder-Pro extends the Zen4-Coder family to 72 billion parameters with capabilities spanning the complete software engineering lifecycle: architecture design, implementation, testing, documentation, security review, and deployment. Built on the Mixture of Experts (MoE) architecture with an expanded expert pool and a reinforced agentic training protocol, Zen4-Coder-Pro achieves 96.8\% on HumanEval, 67.3\% on SWE-bench, 71.2\% on SWE-bench Verified, and 91.4\% on LiveCodeBench. Beyond benchmark performance, Zen4-Coder-Pro demonstrates end-to-end project development capability: given a specification, it can design system architecture, implement all components, write comprehensive tests, generate documentation, and produce CI/CD pipeline configurations. This paper describes the model's architecture, training protocol, capability profile, and deployment considerations.
 \end{abstract}
 
 \tableofcontents
@@ -67,7 +67,7 @@ The distinctive capabilities of Zen4-Coder-Pro relative to Zen4-Coder (32B) are:
 \toprule
 \textbf{Parameter} & \textbf{Value} \\
 \midrule
-Architecture & Zen MoDE (Mixture of Distilled Experts) \\
+Architecture & Mixture of Experts (MoE) \\
 Total Parameters & 72B \\
 Active Parameters per Token & 18B \\
 Number of Experts & 128 \\
@@ -82,9 +82,9 @@ Release Date & February 2026 \\
 
 \section{Architecture}
 
-\subsection{Expanded Zen MoDE Architecture}
+\subsection{Expanded MoE Architecture}
 
-Zen4-Coder-Pro uses an expanded instance of the Zen MoDE architecture with 128 experts (compared to 64 in Zen4-Coder). The expanded expert pool provides finer-grained specialization: whereas Zen4-Coder has experts that specialize broadly by language family (systems, scripting, functional), Zen4-Coder-Pro develops sub-experts that specialize by both language and task type.
+Zen4-Coder-Pro uses an expanded instance of the MoE architecture with 128 experts (compared to 64 in Zen4-Coder). The expanded expert pool provides finer-grained specialization: whereas Zen4-Coder has experts that specialize broadly by language family (systems, scripting, functional), Zen4-Coder-Pro develops sub-experts that specialize by both language and task type.
 
 The router in Zen4-Coder-Pro is a two-level hierarchical router. The first level selects a domain:
 
@@ -381,7 +381,7 @@ Full software lifecycle automation has been approached through agentic LLM syste
 
 \section{Conclusion}
 
-Zen4-Coder-Pro advances the state of the art in agentic software engineering, achieving exceptional benchmark performance on SWE-bench and LiveCodeBench while introducing new capabilities in architecture design, end-to-end project development, and CI/CD integration. The 72B Zen MoDE architecture with hierarchical expert routing provides the reasoning depth required for cross-cutting concerns such as security, performance, and long-horizon planning. Zen4-Coder-Pro represents a practical step toward AI systems that can serve as capable collaborators across the full software development lifecycle.
+Zen4-Coder-Pro advances the state of the art in agentic software engineering, achieving exceptional benchmark performance on SWE-bench and LiveCodeBench while introducing new capabilities in architecture design, end-to-end project development, and CI/CD integration. The 72B MoE architecture with hierarchical expert routing provides the reasoning depth required for cross-cutting concerns such as security, performance, and long-horizon planning. Zen4-Coder-Pro represents a practical step toward AI systems that can serve as capable collaborators across the full software development lifecycle.
 
 \begin{thebibliography}{9}
 \bibitem{swebench} Jimenez, C. et al. (2024). SWE-bench: Can Language Models Resolve Real-World GitHub Issues? ICLR 2024.

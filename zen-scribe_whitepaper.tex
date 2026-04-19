@@ -5,7 +5,7 @@
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{listings}
-\usepackage{color}
+\usepackage{xcolor}
 \usepackage{booktabs}
 \usepackage{float}
 \usepackage{geometry}
@@ -42,13 +42,13 @@
     \vspace{0.5cm}
     \Huge \textbf{Zen-Scribe} \\
     \vspace{0.3cm}
-    \large Speech Recognition & Transcription \\
+    \large Speech Recognition \& Transcription \\
     \vspace{0.5cm}
     \normalsize Technical Whitepaper v1.0
 }
 
 \author{
-    Zach Kelling\thanks{zach@lux.network} \\
+    Antje Worring, Zach Kelling\thanks{zach@lux.network} \\
     \texttt{research@hanzo.ai} \\
     \\
     Zoo Labs Foundation \\
@@ -62,7 +62,7 @@
 \maketitle
 
 \begin{abstract}
-We present \textbf{Zen-Scribe}, a 1.5B parameter model optimized for speech recognition & transcription. 
+We present \textbf{Zen-Scribe}, a 1.5B parameter model optimized for speech recognition \& transcription. 
 Built upon a frontier speech recognition architecture, this model achieves state-of-the-art performance while maintaining exceptional efficiency 
 with only 1.5B active parameters. the model represents a significant advancement in democratizing AI through sustainable and efficient architectures.
 \end{abstract}
@@ -78,7 +78,7 @@ The rapid advancement of artificial intelligence has created an unprecedented de
 \subsection{Key Innovations}
 \begin{itemize}
     \item \textbf{Efficient Architecture}: 1.5B active parameters from 1.5B total
-    \item \textbf{Specialized Training}: Optimized for speech recognition & transcription
+    \item \textbf{Specialized Training}: Optimized for speech recognition \& transcription
     \item \textbf{Extended Context}: 30s audio context window
     
     
@@ -116,7 +116,7 @@ Architecture Type & Encoder-Decoder \\
 The model uses a dense architecture with all parameters active during inference, optimized for maximum performance per parameter.
 
 \subsubsection{Attention Mechanism}
-Specialized attention mechanisms optimized for speech recognition & transcription.
+Specialized attention mechanisms optimized for speech recognition \& transcription.
 
 
 
@@ -163,7 +163,7 @@ Latency (First Token) & 20 ms \\
 The model was trained on a carefully curated dataset comprising:
 \begin{itemize}
     \item High-quality filtered web data (1TB)
-    \item Domain-specific corpora for speech recognition & transcription
+    \item Domain-specific corpora for speech recognition \& transcription
     \item Synthetic data generation for edge cases
     \item Human feedback through RLHF
 \end{itemize}
@@ -179,11 +179,13 @@ The model was trained on a carefully curated dataset comprising:
 \section{Use Cases and Applications}
 
 \subsection{Primary Applications}
+\begin{itemize}
 \item Real-time transcription
 \item Meeting notes and summaries
 \item Podcast transcription
 \item Multilingual subtitles
 \item Voice command processing
+\end{itemize}
 
 \subsection{Integration Examples}
 
@@ -204,7 +206,7 @@ print(transcription["text"])
 
 \subsection{Sustainability Metrics}
 \begin{itemize}
-    \item \textbf{Carbon Footprint}: 0.03 kg CO₂e per million inferences
+    \item \textbf{Carbon Footprint}: 0.03 kg CO\textsubscript{2}e per million inferences
     \item \textbf{Energy Usage}: 0.8 kWh per day (1000 users)
     \item \textbf{Efficiency Gain}: 96\% reduction vs comparable models
 \end{itemize}
@@ -278,7 +280,7 @@ INT4 & 3 GB & Intel NUC \\
 \section{Conclusion}
 
 \textbf{Zen-Scribe} represents a significant advancement in AI democratization, 
-delivering exceptional performance for speech recognition & transcription while maintaining 
+delivering exceptional performance for speech recognition \& transcription while maintaining 
 unprecedented efficiency. Through innovative architecture design and careful optimization, 
 the model achieves a balance between capability and sustainability that sets a new standard 
 for responsible AI development.
@@ -288,8 +290,19 @@ for responsible AI development.
 We thank the open-source community, our research partners, and the teams at Hanzo AI and 
 Zoo Labs Foundation for their contributions to this work.
 
-\bibliographystyle{plain}
-\bibliography{references}
+\begin{thebibliography}{99}
+\bibitem{vaswani2017attention} Vaswani, A. et al. (2017). Attention Is All You Need. NeurIPS 2017.
+\bibitem{brown2020language} Brown, T. et al. (2020). Language Models are Few-Shot Learners. NeurIPS 2020.
+\bibitem{radford2019language} Radford, A. et al. (2019). Language Models are Unsupervised Multitask Learners. OpenAI Technical Report.
+\bibitem{ouyang2022training} Ouyang, L. et al. (2022). Training Language Models to Follow Instructions with Human Feedback. NeurIPS 2022.
+\bibitem{raffel2020exploring} Raffel, C. et al. (2020). Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer. JMLR 2020.
+\bibitem{radford2023robust} Radford, A. et al. (2023). Robust Speech Recognition via Large-Scale Weak Supervision. ICML 2023.
+\bibitem{schulman2017proximal} Schulman, J. et al. (2017). Proximal Policy Optimization Algorithms. arXiv:1707.06347.
+\bibitem{rafailov2023direct} Rafailov, R. et al. (2023). Direct Preference Optimization: Your Language Model is Secretly a Reward Model. NeurIPS 2023.
+\bibitem{touvron2023llama} Touvron, H. et al. (2023). LLaMA: Open and Efficient Foundation Language Models. arXiv:2302.13971.
+\bibitem{hu2021lora} Hu, E. et al. (2021). LoRA: Low-Rank Adaptation of Large Language Models. ICLR 2022.
+\bibitem{dettmers2023qlora} Dettmers, T. et al. (2023). QLoRA: Efficient Finetuning of Quantized Language Models. NeurIPS 2023.
+\end{thebibliography}
 
 \appendix
 
