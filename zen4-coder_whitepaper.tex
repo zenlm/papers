@@ -25,7 +25,7 @@
 \title{\textbf{Zen4-Coder: A Fourth-Generation Code Intelligence Model\\
 with Multi-Repository Understanding and Autonomous Debugging}\\[0.5em]
 \large Technical Whitepaper v2026.01}
-\author{Zen LM Research Team\\
+\author{Antje Worring, Zach Kelling \\ Zen LM Research Team\\
 \texttt{research@zenlm.org}\\
 \href{https://papers.zenlm.org}{papers.zenlm.org}}
 \date{January 2026}
@@ -34,7 +34,7 @@ with Multi-Repository Understanding and Autonomous Debugging}\\[0.5em]
 \maketitle
 
 \begin{abstract}
-Zen4-Coder is our fourth-generation code specialist at 32 billion parameters, built on the Zen MoDE (Mixture of Distilled Experts) architecture and trained on real developer workflows spanning open-source repositories, issue trackers, pull request histories, and code review datasets. Unlike prior generation models that treat code generation as isolated function synthesis, Zen4-Coder understands multi-repository dependency graphs, reasons across codebases spanning millions of lines, and autonomously executes debugging loops by forming and testing hypotheses. On standard code generation benchmarks, Zen4-Coder achieves 95.2\% on HumanEval, 58.4\% on SWE-bench, 0.891 on RepoBench, and 89.3\% on MBPP+, establishing new state-of-the-art results among models in its parameter class. This paper describes the architecture, training methodology, capability evaluations, and safety considerations for Zen4-Coder.
+Zen4-Coder is our fourth-generation code specialist at 32 billion parameters, built on the Mixture of Experts (MoE) architecture and trained on real developer workflows spanning open-source repositories, issue trackers, pull request histories, and code review datasets. Unlike prior generation models that treat code generation as isolated function synthesis, Zen4-Coder understands multi-repository dependency graphs, reasons across codebases spanning millions of lines, and autonomously executes debugging loops by forming and testing hypotheses. On standard code generation benchmarks, Zen4-Coder achieves 95.2\% on HumanEval, 58.4\% on SWE-bench, 0.891 on RepoBench, and 89.3\% on MBPP+, establishing new state-of-the-art results among models in its parameter class. This paper describes the architecture, training methodology, capability evaluations, and safety considerations for Zen4-Coder.
 \end{abstract}
 
 \tableofcontents
@@ -50,7 +50,7 @@ Zen4-Coder represents a qualitative shift in capability: a model trained not mer
   \item \textbf{Multi-Repository Context Understanding}: Zen4-Coder encodes cross-repository dependency graphs and can reason about how changes in one module propagate to consumers across separate repositories.
   \item \textbf{Autonomous Debugging}: Given a failing test or runtime error, Zen4-Coder forms a ranked list of hypotheses, generates candidate patches, evaluates them symbolically, and iterates until the failure is resolved.
   \item \textbf{Test Generation}: Zen4-Coder synthesizes comprehensive test suites including property-based tests, regression tests for known failure modes, and edge-case coverage that complements existing test infrastructure.
-  \item \textbf{Zen MoDE Architecture}: The 32B parameter model uses sparse expert routing to activate specialized subnetworks for distinct programming languages, paradigms, and reasoning tasks, achieving high accuracy without proportional inference cost.
+  \item \textbf{MoE Architecture}: The 32B parameter model uses sparse expert routing to activate specialized subnetworks for distinct programming languages, paradigms, and reasoning tasks, achieving high accuracy without proportional inference cost.
 \end{enumerate}
 
 \subsection{Model Overview}
@@ -62,7 +62,7 @@ Zen4-Coder represents a qualitative shift in capability: a model trained not mer
 \toprule
 \textbf{Parameter} & \textbf{Value} \\
 \midrule
-Architecture & Zen MoDE (Mixture of Distilled Experts) \\
+Architecture & Mixture of Experts (MoE) \\
 Total Parameters & 32B \\
 Active Parameters per Token & 8B \\
 Context Window & 128K tokens \\
@@ -75,11 +75,11 @@ Release Date & January 2026 \\
 
 \section{Architecture}
 
-\subsection{Zen MoDE: Mixture of Distilled Experts}
+\subsection{Mixture of Experts (MoE)}
 
-Zen4-Coder is built on the Zen MoDE architecture, which combines sparse mixture-of-experts routing with knowledge distillation from an ensemble of specialized teacher models. The core insight is that different programming tasks require qualitatively different reasoning patterns: syntactic completion, semantic reasoning about types and invariants, debugging (causal inference), and architecture design each activate different cognitive processes in human experts.
+Zen4-Coder is built on the MoE architecture, which combines sparse mixture-of-experts routing with knowledge distillation from an ensemble of specialized teacher models. The core insight is that different programming tasks require qualitatively different reasoning patterns: syntactic completion, semantic reasoning about types and invariants, debugging (causal inference), and architecture design each activate different cognitive processes in human experts.
 
-The Zen MoDE architecture formalizes this intuition. Given a token sequence $x_{1:t}$, the router $R_\theta$ computes a probability distribution over $N$ expert networks $\{E_1, \ldots, E_N\}$:
+The MoE architecture formalizes this intuition. Given a token sequence $x_{1:t}$, the router $R_\theta$ computes a probability distribution over $N$ expert networks $\{E_1, \ldots, E_N\}$:
 
 \begin{equation}
   R_\theta(x_{1:t}) = \text{softmax}\left(W_r \cdot h_t + b_r\right) \in \mathbb{R}^N
@@ -362,11 +362,11 @@ Zen4-Coder exposes an OpenAI-compatible API endpoint, supporting both standard c
 
 \section{Related Work}
 
-Code intelligence has advanced rapidly through several generations of transformer-based models \cite{codex,alphacode,starcoder,codellama}. The transition from function-level to repository-level understanding has been driven by longer context windows and retrieval-augmented generation \cite{repocoder,swebench}. Agentic approaches that combine code generation with execution feedback \cite{agentless,swebenchagent} represent the current frontier, which Zen4-Coder advances through the unified Zen MoDE architecture and RLCE training objective.
+Code intelligence has advanced rapidly through several generations of transformer-based models \cite{codex,alphacode,starcoder,codellama}. The transition from function-level to repository-level understanding has been driven by longer context windows and retrieval-augmented generation \cite{repocoder,swebench}. Agentic approaches that combine code generation with execution feedback \cite{agentless,swebenchagent} represent the current frontier, which Zen4-Coder advances through the unified MoE architecture and RLCE training objective.
 
 \section{Conclusion}
 
-Zen4-Coder establishes a new capability tier for code intelligence at the 32B parameter scale, with multi-repository understanding, autonomous debugging, and comprehensive test generation distinguishing it from prior generation models. The Zen MoDE architecture enables efficient deployment with 8B active parameters at inference time while retaining the representational capacity of a 32B model. Benchmark results across HumanEval, SWE-bench, RepoBench, and MBPP+ confirm state-of-the-art performance among models in its parameter class.
+Zen4-Coder establishes a new capability tier for code intelligence at the 32B parameter scale, with multi-repository understanding, autonomous debugging, and comprehensive test generation distinguishing it from prior generation models. The MoE architecture enables efficient deployment with 8B active parameters at inference time while retaining the representational capacity of a 32B model. Benchmark results across HumanEval, SWE-bench, RepoBench, and MBPP+ confirm state-of-the-art performance among models in its parameter class.
 
 Future work will focus on deeper integration with distributed version control workflows, formal verification of generated code properties, and tighter coupling with continuous integration systems for real-time feedback during development.
 

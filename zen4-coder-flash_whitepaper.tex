@@ -24,7 +24,7 @@
 \title{\textbf{Zen4-Coder-Flash: Real-Time Code Intelligence\\
 for IDE Environments}\\[0.5em]
 \large Technical Whitepaper v2026.01}
-\author{Zen LM Research Team\\
+\author{Antje Worring, Zach Kelling \\ Zen LM Research Team\\
 \texttt{research@zenlm.org}\\
 \href{https://papers.zenlm.org}{papers.zenlm.org}}
 \date{January 2026}
@@ -33,7 +33,7 @@ for IDE Environments}\\[0.5em]
 \maketitle
 
 \begin{abstract}
-Zen4-Coder-Flash is a distilled 8B parameter code intelligence model optimized for real-time IDE deployment, achieving sub-30ms P95 latency for inline code completion while maintaining strong coding accuracy. Distilled from Zen4-Coder (32B) using progressive knowledge distillation and Zen MoDE (Mixture of Distilled Experts) architecture compression, Zen4-Coder-Flash retains 88.5\% of Zen4-Coder's HumanEval performance (84.3\%) and 79.1\% MBPP accuracy at 1200 tokens per second throughput. Speculative decoding with a 120M parameter draft model reduces P95 first-token latency to 28ms, enabling responsive autocomplete and inline suggestion experiences that match or exceed prior dedicated completion models while generalizing across 92 programming languages.
+Zen4-Coder-Flash is a distilled 8B parameter code intelligence model optimized for real-time IDE deployment, achieving sub-30ms P95 latency for inline code completion while maintaining strong coding accuracy. Distilled from Zen4-Coder (32B) using progressive knowledge distillation and Mixture of Experts (MoE) architecture compression, Zen4-Coder-Flash retains 88.5\% of Zen4-Coder's HumanEval performance (84.3\%) and 79.1\% MBPP accuracy at 1200 tokens per second throughput. Speculative decoding with a 120M parameter draft model reduces P95 first-token latency to 28ms, enabling responsive autocomplete and inline suggestion experiences that match or exceed prior dedicated completion models while generalizing across 92 programming languages.
 \end{abstract}
 
 \tableofcontents
@@ -48,7 +48,7 @@ Prior approaches to this tradeoff either deployed small general-purpose models (
 \begin{enumerate}
   \item \textbf{Progressive Knowledge Distillation}: Token-level distillation from Zen4-Coder (32B) preserves the behavioral distribution of the teacher while drastically reducing parameter count.
   \item \textbf{Speculative Decoding}: A 120M draft model generates candidate token sequences that the 8B verifier accepts or rejects in parallel, reducing effective per-token latency by 2.8$\times$.
-  \item \textbf{Architecture Optimization}: The Zen MoDE expert pool is compressed from 64 to 16 experts with larger individual capacity, reducing routing overhead and improving cache efficiency.
+  \item \textbf{Architecture Optimization}: The MoE expert pool is compressed from 64 to 16 experts with larger individual capacity, reducing routing overhead and improving cache efficiency.
 \end{enumerate}
 
 \subsection{Model Overview}
@@ -60,7 +60,7 @@ Prior approaches to this tradeoff either deployed small general-purpose models (
 \toprule
 \textbf{Parameter} & \textbf{Value} \\
 \midrule
-Architecture & Zen MoDE (Compressed) \\
+Architecture & MoE (Compressed) \\
 Total Parameters & 8B \\
 Draft Model Parameters & 120M \\
 Context Window & 32K tokens \\
@@ -75,9 +75,9 @@ Release Date & January 2026 \\
 
 \section{Architecture}
 
-\subsection{Compressed Zen MoDE}
+\subsection{Compressed MoE}
 
-The full Zen MoDE architecture in Zen4-Coder uses 64 experts with 4 active per token. For real-time deployment, this introduces routing overhead that is unacceptable at sub-30ms latency targets. Zen4-Coder-Flash uses a compressed expert configuration:
+The full MoE architecture in Zen4-Coder uses 64 experts with 4 active per token. For real-time deployment, this introduces routing overhead that is unacceptable at sub-30ms latency targets. Zen4-Coder-Flash uses a compressed expert configuration:
 
 \begin{table}[H]
 \centering
@@ -250,7 +250,7 @@ Java / Kotlin & 69\% & 26ms \\
 C / C++ & 66\% & 27ms \\
 \bottomrule
 \end{tabular}
-\end{table>
+\end{table}
 
 \section{Deployment}
 
@@ -318,11 +318,11 @@ Even in real-time autocomplete contexts, Zen4-Coder-Flash maintains safety prope
 
 \section{Related Work}
 
-Real-time code completion has been addressed through n-gram models \cite{ngram}, small neural language models \cite{codewhisperer}, and speculative decoding applied to general models \cite{speculative,specinfer}. Knowledge distillation for code models has been explored in \cite{codistil}. Zen4-Coder-Flash combines these techniques with the Zen MoDE architecture in a unified training protocol optimized for the specific latency and accuracy requirements of IDE deployment.
+Real-time code completion has been addressed through n-gram models \cite{ngram}, small neural language models \cite{codewhisperer}, and speculative decoding applied to general models \cite{speculative,specinfer}. Knowledge distillation for code models has been explored in \cite{codistil}. Zen4-Coder-Flash combines these techniques with the MoE architecture in a unified training protocol optimized for the specific latency and accuracy requirements of IDE deployment.
 
 \section{Conclusion}
 
-Zen4-Coder-Flash establishes a new accuracy-latency operating point for IDE code intelligence, achieving 84.3\% HumanEval accuracy at 28ms P95 first-token latency through a combination of progressive knowledge distillation from Zen4-Coder, compressed Zen MoDE architecture, and speculative decoding. The 8B parameter footprint enables on-device deployment on a single consumer GPU while the 1,200 tok/s throughput supports responsive real-time pair programming assistance. With 79.7\% useful suggestion rate in developer acceptance studies, Zen4-Coder-Flash provides practical value in production IDE environments.
+Zen4-Coder-Flash establishes a new accuracy-latency operating point for IDE code intelligence, achieving 84.3\% HumanEval accuracy at 28ms P95 first-token latency through a combination of progressive knowledge distillation from Zen4-Coder, compressed MoE architecture, and speculative decoding. The 8B parameter footprint enables on-device deployment on a single consumer GPU while the 1,200 tok/s throughput supports responsive real-time pair programming assistance. With 79.7\% useful suggestion rate in developer acceptance studies, Zen4-Coder-Flash provides practical value in production IDE environments.
 
 \begin{thebibliography}{9}
 \bibitem{speculative} Leviathan, Y. et al. (2023). Fast Inference from Transformers via Speculative Decoding. ICML 2023.

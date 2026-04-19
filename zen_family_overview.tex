@@ -7,6 +7,7 @@
 \usepackage{listings}
 \usepackage{color}
 \usepackage{booktabs}
+\usepackage{multirow}
 \usepackage{float}
 \usepackage{geometry}
 \usepackage{multicol}
@@ -35,7 +36,7 @@
 }
 
 \author{
-    Zach Kelling\thanks{Corresponding author: zach@lux.network} \\
+    Antje Worring, Zach Kelling\thanks{Corresponding author: zach@lux.network} \\
     \textit{Hanzo Industries \quad Lux Industries \quad Zoo Labs Foundation} \\
     \texttt{research@lux.network}
 }
@@ -48,11 +49,11 @@
 
 \begin{abstract}
 We introduce the \textbf{Zen AI Model Family}, a comprehensive suite of 10 state-of-the-art models spanning language understanding, 
-visual creation, design analysis, and speech recognition. Built on cutting-edge transformer architectures and optimized 
+visual creation, design analysis, and speech recognition. Built on transformer architectures and optimized 
 for efficiency, the Zen models achieve performance comparable to models 10x their size while reducing energy consumption by up to 98\%. 
 This whitepaper presents the complete ecosystem including 5 language models (0.6B to 480B parameters), 2 artist models for image 
 generation and editing, 2 designer models for visual reasoning, and 1 scribe model for speech recognition. Through innovative 
-techniques including Mixture of Experts, extended thinking modes, and aggressive quantization, the Zen family democratizes 
+techniques including Mixture of Experts, extended thinking modes, and aggressive quantization, the Zen family broadens 
 access to frontier AI capabilities across diverse hardware platforms from edge devices to cloud infrastructure.
 \end{abstract}
 
@@ -67,7 +68,7 @@ through a principled approach to model design that prioritizes efficiency withou
 
 \subsection{Mission and Vision}
 
-Our mission is to democratize access to state-of-the-art AI capabilities through models that are:
+Our objective: provide AI capabilities through models that are:
 \begin{itemize}
     \item \textbf{Efficient}: Optimized for minimal resource consumption
     \item \textbf{Capable}: Matching or exceeding larger models in key metrics
@@ -412,7 +413,7 @@ curl -X POST http://localhost:8080/v1/completions \
 
 \subsection{Sustainability Metrics}
 
-The Zen family achieves unprecedented efficiency:
+The Zen family targets the following efficiency profile:
 
 \begin{table}[H]
 \centering
@@ -494,9 +495,9 @@ Q4 2026 & Zen v2.0 with neural architecture search \\
 
 \section{Conclusion}
 
-The Zen AI Model Family represents a paradigm shift in AI development, proving that exceptional capability and 
+The Zen AI Model Family extends prior MoE language modeling work, illustrating that capability and 
 efficiency are not mutually exclusive. Through innovative architectures, training techniques, and deployment 
-strategies, we have created a comprehensive ecosystem of models that democratize access to frontier AI while 
+strategies, we have created a coordinated set of models that broaden access to frontier AI while 
 reducing environmental impact by up to 98\%.
 
 With 10 models spanning language, vision, design, and speech, the Zen family provides solutions for every use 
@@ -530,5 +531,19 @@ All Zen models are available at:
   year={2025}
 }
 \end{verbatim}
+
+\begin{thebibliography}{99}
+\bibitem{vaswani2017attention} A.~Vaswani et al., ``Attention is All You Need,'' \textit{NeurIPS}, 2017.
+\bibitem{brown2020language} T.~Brown et al., ``Language Models are Few-Shot Learners,'' \textit{NeurIPS}, 2020.
+\bibitem{touvron2023llama} H.~Touvron et al., ``LLaMA: Open and Efficient Foundation Language Models,'' \textit{arXiv:2302.13971}, 2023.
+\bibitem{hoffmann2022training} J.~Hoffmann et al., ``Training Compute-Optimal Large Language Models,'' \textit{arXiv:2203.15556}, 2022.
+\bibitem{shazeer2017outrageously} N.~Shazeer et al., ``Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer,'' \textit{ICLR}, 2017.
+\bibitem{fedus2022switch} W.~Fedus, B.~Zoph, and N.~Shazeer, ``Switch Transformers: Scaling to Trillion Parameter Models,'' \textit{JMLR}, vol.~23, 2022.
+\bibitem{hu2021lora} E.~J. Hu et al., ``LoRA: Low-Rank Adaptation of Large Language Models,'' \textit{arXiv:2106.09685}, 2021.
+\bibitem{dettmers2023qlora} T.~Dettmers et al., ``QLoRA: Efficient Finetuning of Quantized LLMs,'' \textit{NeurIPS}, 2023.
+\bibitem{frantar2022gptq} E.~Frantar et al., ``GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers,'' \textit{arXiv:2210.17323}, 2022.
+\bibitem{ouyang2022training} L.~Ouyang et al., ``Training language models to follow instructions with human feedback,'' \textit{NeurIPS}, 2022.
+\bibitem{rafailov2023direct} R.~Rafailov et al., ``Direct Preference Optimization,'' \textit{NeurIPS}, 2023.
+\end{thebibliography}
 
 \end{document}

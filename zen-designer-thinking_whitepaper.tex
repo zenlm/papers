@@ -5,7 +5,7 @@
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{listings}
-\usepackage{color}
+\usepackage{xcolor}
 \usepackage{booktabs}
 \usepackage{float}
 \usepackage{geometry}
@@ -42,13 +42,13 @@
     \vspace{0.5cm}
     \Huge \textbf{Zen-Designer-Thinking} \\
     \vspace{0.3cm}
-    \large Visual Reasoning & Analysis \\
+    \large Visual Reasoning \& Analysis \\
     \vspace{0.5cm}
     \normalsize Technical Whitepaper v1.0
 }
 
 \author{
-    Zach Kelling\thanks{zach@lux.network} \\
+    Antje Worring, Zach Kelling\thanks{zach@lux.network} \\
     \texttt{research@hanzo.ai} \\
     \\
     Zoo Labs Foundation \\
@@ -62,7 +62,7 @@
 \maketitle
 
 \begin{abstract}
-We present \textbf{Zen-Designer-Thinking}, a 235B parameter model optimized for visual reasoning & analysis. 
+We present \textbf{Zen-Designer-Thinking}, a 235B parameter model optimized for visual reasoning \& analysis. 
 Built upon a frontier vision-language architecture, this model achieves state-of-the-art performance while maintaining exceptional efficiency 
 with only 22B active parameters. Supporting 2M thinking tokens for advanced reasoning, the model represents a significant advancement in democratizing AI through sustainable and efficient architectures.
 \end{abstract}
@@ -78,7 +78,7 @@ The rapid advancement of artificial intelligence has created an unprecedented de
 \subsection{Key Innovations}
 \begin{itemize}
     \item \textbf{Efficient Architecture}: 22B active parameters from 235B total
-    \item \textbf{Specialized Training}: Optimized for visual reasoning & analysis
+    \item \textbf{Specialized Training}: Optimized for visual reasoning \& analysis
     \item \textbf{Extended Context}: 131K context window
     \item \textbf{Thinking Mode}: 2M thinking tokens
     
@@ -117,7 +117,7 @@ The model employs a sophisticated Mixture of Experts architecture that activates
 during inference while maintaining 235B total parameters for enhanced capability.
 
 \subsubsection{Attention Mechanism}
-Specialized attention mechanisms optimized for visual reasoning & analysis.
+Specialized attention mechanisms optimized for visual reasoning \& analysis.
 
 \subsubsection{Thinking Mode}
 Advanced reasoning through extended thinking tokens (up to 2M), enabling:
@@ -171,7 +171,7 @@ Latency (First Token) & 180 ms \\
 The model was trained on a carefully curated dataset comprising:
 \begin{itemize}
     \item High-quality filtered web data (50TB)
-    \item Domain-specific corpora for visual reasoning & analysis
+    \item Domain-specific corpora for visual reasoning \& analysis
     \item Synthetic data generation for edge cases
     \item Human feedback through RLHF
 \end{itemize}
@@ -187,11 +187,13 @@ The model was trained on a carefully curated dataset comprising:
 \section{Use Cases and Applications}
 
 \subsection{Primary Applications}
+\begin{itemize}
 \item UI/UX design analysis
 \item Architecture and layout planning
 \item Visual question answering
 \item Design system generation
 \item Accessibility evaluation
+\end{itemize}
 
 \subsection{Integration Examples}
 
@@ -212,7 +214,7 @@ analysis = processor.decode(outputs[0])
 
 \subsection{Sustainability Metrics}
 \begin{itemize}
-    \item \textbf{Carbon Footprint}: 0.35 kg CO₂e per million inferences
+    \item \textbf{Carbon Footprint}: 0.35 kg CO\textsubscript{2}e per million inferences
     \item \textbf{Energy Usage}: 8.0 kWh per day (1000 users)
     \item \textbf{Efficiency Gain}: 90\% reduction vs comparable models
 \end{itemize}
@@ -286,7 +288,7 @@ INT4 & 55 GB & A100 80GB \\
 \section{Conclusion}
 
 \textbf{Zen-Designer-Thinking} represents a significant advancement in AI democratization, 
-delivering exceptional performance for visual reasoning & analysis while maintaining 
+delivering exceptional performance for visual reasoning \& analysis while maintaining 
 unprecedented efficiency. Through innovative architecture design and careful optimization, 
 the model achieves a balance between capability and sustainability that sets a new standard 
 for responsible AI development.
@@ -296,8 +298,19 @@ for responsible AI development.
 We thank the open-source community, our research partners, and the teams at Hanzo AI and 
 Zoo Labs Foundation for their contributions to this work.
 
-\bibliographystyle{plain}
-\bibliography{references}
+\begin{thebibliography}{99}
+\bibitem{vaswani2017attention} Vaswani, A. et al. (2017). Attention Is All You Need. NeurIPS 2017.
+\bibitem{brown2020language} Brown, T. et al. (2020). Language Models are Few-Shot Learners. NeurIPS 2020.
+\bibitem{ouyang2022training} Ouyang, L. et al. (2022). Training Language Models to Follow Instructions with Human Feedback. NeurIPS 2022.
+\bibitem{ho2020denoising} Ho, J., Jain, A. and Abbeel, P. (2020). Denoising Diffusion Probabilistic Models. NeurIPS 2020.
+\bibitem{rombach2022high} Rombach, R. et al. (2022). High-Resolution Image Synthesis with Latent Diffusion Models. CVPR 2022.
+\bibitem{radford2021learning} Radford, A. et al. (2021). Learning Transferable Visual Models From Natural Language Supervision. ICML 2021.
+\bibitem{shazeer2017outrageously} Shazeer, N. et al. (2017). Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer. ICLR 2017.
+\bibitem{fedus2022switch} Fedus, W. et al. (2022). Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity. JMLR 2022.
+\bibitem{wei2022chain} Wei, J. et al. (2022). Chain-of-Thought Prompting Elicits Reasoning in Large Language Models. NeurIPS 2022.
+\bibitem{rafailov2023direct} Rafailov, R. et al. (2023). Direct Preference Optimization: Your Language Model is Secretly a Reward Model. NeurIPS 2023.
+\bibitem{touvron2023llama} Touvron, H. et al. (2023). LLaMA: Open and Efficient Foundation Language Models. arXiv:2302.13971.
+\end{thebibliography}
 
 \appendix
 

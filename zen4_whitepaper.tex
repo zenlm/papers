@@ -5,7 +5,7 @@
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{listings}
-\usepackage{color}
+\usepackage{xcolor}
 \usepackage{booktabs}
 \usepackage{float}
 \usepackage{geometry}
@@ -45,7 +45,7 @@
 }
 
 \author{
-    Zach Kelling\thanks{zach@lux.network} \\
+    Antje Worring, Zach Kelling\thanks{zach@lux.network} \\
     \texttt{research@hanzo.ai} \\
     \\
     Zoo Labs Foundation \\
@@ -97,8 +97,8 @@ prior for when and how to invoke external functions rather than a surface-level 
     matching full-attention quality on benchmarks through 100K tokens.
     \item \textbf{Native Tool Pretraining}: Function-call tokens included in pretraining corpus;
     20-point improvement in complex multi-turn tool-use evaluations versus SFT-only baseline.
-    \item \textbf{Zen MoDE Distillation}: Fourth-generation application of Mixture of Distilled
-    Experts produces 14B model with capability profile exceeding prior 30B+ dense models.
+    \item \textbf{Distilled Fine-Tuning}: Fourth-generation distilled fine-tuning of a
+    Mixture-of-Experts base produces 14B model with capability profile exceeding prior 30B+ dense models.
     \item \textbf{40\% Efficiency Gain}: Architectural and training improvements reduce FLOPs/token
     by 40\% relative to Zen3 at matched quality thresholds.
 \end{itemize}
@@ -121,7 +121,7 @@ shares core architectural principles while optimizing for different deployment c
 \midrule
 Total Parameters       & 14.3B \\
 Active Parameters      & 14.3B (dense) \\
-Architecture           & Zen MoDE Hybrid Transformer \\
+Architecture           & Hybrid Transformer \\
 Attention Mechanism    & Hierarchical Hybrid Attention (HHA) \\
 Local Window Size      & 4,096 tokens \\
 Global Anchor Tokens   & 512 per layer \\
@@ -187,9 +187,9 @@ The model learns a unified token-level representation where function calls, thei
 (as structured JSON), and their return values are processed identically to natural language,
 with no special-case decoding logic required at inference time.
 
-\subsection{Zen MoDE Distillation}
+\subsection{Distilled Fine-Tuning}
 
-The Zen MoDE (Mixture of Distilled Experts) framework transfers capability from larger teacher
+The distilled fine-tuning framework transfers capability from larger Mixture-of-Experts teacher
 models into the 14B Zen4 architecture through a three-stage process:
 
 \begin{enumerate}
@@ -371,7 +371,7 @@ Zen4's native tool pretraining extends this by making tool calls a pretraining o
 giving the model deeper statistical priors for tool selection and argument formation.
 
 Knowledge distillation \cite{hinton2015distilling} traditionally transfers logit distributions
-from teacher to student. The Zen MoDE framework extends this to intermediate representations,
+from teacher to student. The Zen distillation framework extends this to intermediate representations,
 drawing on feature-level distillation \cite{romero2014fitnets} while adding the expert
 identification stage specific to mixture-of-experts teachers.
 
@@ -476,7 +476,7 @@ Zen4 establishes a new performance ceiling for the 14B dense parameter class thr
 architectural innovation rather than scale. The Hierarchical Hybrid Attention mechanism
 resolves the context-length memory wall, native tool pretraining elevates function-call
 reliability from a fine-tuning artifact to a first-class capability, and the fourth
-generation of Zen MoDE distillation closes the gap to models more than twice Zen4's size.
+generation of distilled fine-tuning closes the gap to models more than twice Zen4's size.
 The resulting 40\% efficiency gain over Zen3 makes Zen4 the recommended general-purpose
 deployment for applications requiring frontier reasoning, long-document understanding,
 or reliable agentic tool use within a single-GPU budget.
@@ -486,8 +486,19 @@ or reliable agentic tool use within a single-GPU budget.
 We thank the research teams at Hanzo AI and Zoo Labs Foundation, our infrastructure
 partners, and the open-source community whose tooling underpins evaluation and deployment.
 
-\bibliographystyle{plain}
-\bibliography{references}
+\begin{thebibliography}{99}
+\bibitem{beltagy2020longformer} Beltagy, I., Peters, M.E. and Cohan, A. (2020). Longformer: The Long-Document Transformer. arXiv:2004.05150.
+\bibitem{liu2023ring} Liu, H. et al. (2023). Ring Attention with Blockwise Transformers for Near-Infinite Context. arXiv:2310.01889.
+\bibitem{schick2023toolformer} Schick, T. et al. (2023). Toolformer: Language Models Can Teach Themselves to Use Tools. NeurIPS 2023.
+\bibitem{patil2023gorilla} Patil, S.G. et al. (2023). Gorilla: Large Language Model Connected with Massive APIs. arXiv:2305.15334.
+\bibitem{hinton2015distilling} Hinton, G., Vinyals, O. and Dean, J. (2015). Distilling the Knowledge in a Neural Network. arXiv:1503.02531.
+\bibitem{romero2014fitnets} Romero, A. et al. (2015). FitNets: Hints for Thin Deep Nets. ICLR 2015.
+\bibitem{vaswani2017attention} Vaswani, A. et al. (2017). Attention Is All You Need. NeurIPS 2017.
+\bibitem{touvron2023llama} Touvron, H. et al. (2023). LLaMA: Open and Efficient Foundation Language Models. arXiv:2302.13971.
+\bibitem{ouyang2022training} Ouyang, L. et al. (2022). Training Language Models to Follow Instructions with Human Feedback. NeurIPS 2022.
+\bibitem{shao2024grpo} Shao, Z. et al. (2024). DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models. arXiv:2402.03300.
+\bibitem{su2021roformer} Su, J. et al. (2021). RoFormer: Enhanced Transformer with Rotary Position Embedding. arXiv:2104.09864.
+\end{thebibliography}
 
 \appendix
 

@@ -5,7 +5,7 @@
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{listings}
-\usepackage{color}
+\usepackage{xcolor}
 \usepackage{booktabs}
 \usepackage{float}
 \usepackage{geometry}
@@ -45,7 +45,7 @@
 }
 
 \author{
-    Zach Kelling\thanks{zach@lux.network} \\
+    Antje Worring, Zach Kelling\thanks{zach@lux.network} \\
     \texttt{research@hanzo.ai} \\
     \\
     Zoo Labs Foundation \\
@@ -116,7 +116,7 @@ scale on standard reasoning and knowledge benchmarks.
 \midrule
 Total Parameters         & 72.7B \\
 Active Parameters        & 72.7B (dense) \\
-Architecture             & Zen MoDE Hybrid Transformer \\
+Architecture             & Hybrid Transformer \\
 Attention Mechanism      & Hierarchical Hybrid Attention (HHA) \\
 Local Window Size        & 8,192 tokens \\
 Global Anchor Tokens     & 1,024 per layer \\
@@ -177,10 +177,10 @@ externally. The model learns to parse its own prior state tokens as factual cont
 reliable task tracking over 20+ sequential tool calls without context-window management by
 the orchestration layer.
 
-\subsection{Zen MoDE Distillation at Professional Scale}
+\subsection{Distilled Fine-Tuning at Professional Scale}
 
-Zen4-Pro is distilled from an ensemble of teacher models using the fourth-generation Zen MoDE
-framework. At 72B, the student has sufficient capacity to absorb richer intermediate
+Zen4-Pro is distilled from an ensemble of Mixture-of-Experts teacher models using the fourth-generation
+distillation framework. At 72B, the student has sufficient capacity to absorb richer intermediate
 representations, enabling distillation from multiple specialized teachers simultaneously:
 
 \begin{itemize}
@@ -462,7 +462,7 @@ operations before executing them.
 
 Zen4-Pro delivers frontier professional capability at 72B dense parameters through three
 interlocking advances: the Hierarchical Hybrid Attention architecture shared across the
-Zen4 family, multi-teacher Zen MoDE distillation that concentrates specialist knowledge
+Zen4 family, multi-teacher distilled fine-tuning that concentrates specialist knowledge
 into student layers, and the novel Agentic Alignment post-training stage that grounds
 multi-step planning in verifiable engineering outcomes. With 48.7\% on SWE-bench Verified
 and strong results across mathematics, science, and knowledge benchmarks, Zen4-Pro is the
@@ -474,8 +474,21 @@ We thank the annotators, engineers, and researchers at Hanzo AI and Zoo Labs Fou
 who contributed to the trajectory collection, post-training pipeline, and evaluation
 infrastructure underlying this work.
 
-\bibliographystyle{plain}
-\bibliography{references}
+\begin{thebibliography}{99}
+\bibitem{vaswani2017attention} Vaswani, A. et al. (2017). Attention Is All You Need. NeurIPS 2017.
+\bibitem{brown2020language} Brown, T. et al. (2020). Language Models are Few-Shot Learners. NeurIPS 2020.
+\bibitem{ouyang2022training} Ouyang, L. et al. (2022). Training Language Models to Follow Instructions with Human Feedback. NeurIPS 2022.
+\bibitem{touvron2023llama} Touvron, H. et al. (2023). LLaMA: Open and Efficient Foundation Language Models. arXiv:2302.13971.
+\bibitem{hoffmann2022chinchilla} Hoffmann, J. et al. (2022). Training Compute-Optimal Large Language Models. NeurIPS 2022.
+\bibitem{shazeer2017outrageously} Shazeer, N. et al. (2017). Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer. ICLR 2017.
+\bibitem{schulman2017proximal} Schulman, J. et al. (2017). Proximal Policy Optimization Algorithms. arXiv:1707.06347.
+\bibitem{rafailov2023direct} Rafailov, R. et al. (2023). Direct Preference Optimization: Your Language Model is Secretly a Reward Model. NeurIPS 2023.
+\bibitem{chen2021evaluating} Chen, M. et al. (2021). Evaluating Large Language Models Trained on Code. arXiv:2107.03374.
+\bibitem{jimenez2024swebench} Jimenez, C. et al. (2024). SWE-bench: Can Language Models Resolve Real-World GitHub Issues? ICLR 2024.
+\bibitem{yao2023react} Yao, S. et al. (2023). ReAct: Synergizing Reasoning and Acting in Language Models. ICLR 2023.
+\bibitem{wang2024executable} Wang, X. et al. (2024). Executable Code Actions Elicit Better LLM Agents. arXiv:2402.01030.
+\bibitem{shao2024grpo} Shao, Z. et al. (2024). DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models. arXiv:2402.03300.
+\end{thebibliography}
 
 \appendix
 

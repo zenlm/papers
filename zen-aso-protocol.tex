@@ -2,6 +2,10 @@
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{amsmath,amsfonts,amssymb}
+\usepackage{amsthm}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{definition}[theorem]{Definition}
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{listings}
@@ -17,7 +21,7 @@
 
 \title{\textbf{ASO: Active Semantic Optimization for Distributed AI}\\
 \large Technical Report v2025.05}
-\author{Zen LM Research Team\\
+\author{Antje Worring, Zach Kelling \\ Zen LM Research Team\\
 \texttt{research@zenlm.org}}
 \date{May 2025}
 
@@ -433,12 +437,12 @@ validation loss. ASO is available as an open protocol specification at
 codebase.
 
 \section*{Acknowledgements}
-The Zen LM Research Team thanks the infrastructure team for cluster support and the
+The Antje Worring, Zach Kelling \\ Zen LM Research Team thanks the infrastructure team for cluster support and the
 evaluation team for benchmark maintenance.
 
 \begin{thebibliography}{9}
 \bibitem{zenlm2025mode}
-Zen LM Research Team.
+Antje Worring, Zach Kelling \\ Zen LM Research Team.
 \textit{Zen MoDE: Mixture of Distilled Experts for Scalable Language Models}.
 Technical Report v2025.03, Zen LM, 2025.
 
