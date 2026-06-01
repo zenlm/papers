@@ -103,6 +103,9 @@ zen-video: pdfs/zen-video.pdf
 .PHONY: zen-voyager
 zen-voyager: pdfs/zen-voyager.pdf
 
+.PHONY: zen5
+zen5: pdfs/zen5_whitepaper.pdf
+
 # Help target
 .PHONY: help
 help:
@@ -123,4 +126,5 @@ help:
 	@echo "  zen-reranker, zen-coder, zen-omni, zen-nano, zen-eco,"
 	@echo "  zen-next, zen-artist, zen-designer-instruct, zen-designer-thinking,"
 	@echo "  zen-scribe, zen-guard, zen-3d, zen-foley, zen-musician,"
-	@echo "  zen-director, zen-agent, zen-world, zen-video, zen-voyager"
+	@echo "  zen-director, zen-agent, zen-world, zen-video, zen-voyager,"
+	@echo "  zen5"

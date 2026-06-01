@@ -77,5 +77,6 @@ Auto-generated catalogue of research papers.
 | `zen4-pro_whitepaper` | ✓ | `zen4-pro_whitepaper.tex` |
 | `zen4-thinking_whitepaper` | ✓ | `zen4-thinking_whitepaper.tex` |
 | `zen4-ultra_whitepaper` | ✓ | `zen4-ultra_whitepaper.tex` |
+| `zen5_whitepaper` | (pending) | `zen5_whitepaper.tex` |
 
-**Total**: 73 papers, 151 PDFs compiled
+**Total**: 74 papers, 151 PDFs compiled
