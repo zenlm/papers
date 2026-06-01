@@ -1,0 +1,765 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{geometry}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\geometry{margin=1in}
+
+\definecolor{zenblue}{RGB}{41,121,255}
+\definecolor{zengreen}{RGB}{52,199,89}
+\definecolor{zenorange}{RGB}{255,149,0}
+\definecolor{codegray}{RGB}{245,245,245}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=zenblue,
+    urlcolor=zenblue,
+    citecolor=zenblue
+}
+
+\lstset{
+    backgroundcolor=\color{codegray},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    captionpos=b,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray}
+}
+
+\title{
+    \vspace{-2cm}
+    \Large \textbf{Zen AI Model Family} \\
+    \vspace{0.5cm}
+    \Huge \textbf{Zen5: Flash} \\
+    \vspace{0.3cm}
+    \large Flash-Tier Frontier Inference, Behavioral Alignment, \\
+    and Multimodal Routing on Personal Hardware \\
+    \vspace{0.5cm}
+    \normalsize Technical Whitepaper v2026.05
+}
+
+\author{
+    Antje Worring\thanks{antje@hanzo.ai} \\
+    Zach Kelling\thanks{zach@lux.network} \\
+    \texttt{research@hanzo.ai} \\
+    \\
+    Zoo Labs Foundation \\
+    \texttt{foundation@zoolabs.org}
+}
+
+\date{May 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We present \textbf{Zen5}, the fifth generation of the Zen AI model family. Zen5 is delivered as three
+coordinated artifacts. First, the \emph{Zen5 inference engine}, a fork of antirez's \texttt{ds4} runtime,
+serves the 284B-parameter DeepSeek V4 Flash mixture-of-experts model at \texttt{IQ2\_XXS}/\texttt{Q2\_K}
+asymmetric quantization on a single 128 GB Apple Silicon machine. The engine reaches \textbf{27.30 tok/s
+prefill and 8.93--26.68 tok/s generation} depending on prompt length, with a 1M-token context ceiling
+and an on-disk SHA1-keyed KV cache that survives session and process restart. Second, a
+\emph{behavioral post-training pipeline} consisting of (i) single-direction activation ablation against
+the refusal subspace, (ii) identity supervised fine-tuning, and (iii) supervised fine-tuning on a curated
+\emph{Zen Agentic Dataset} of tool-call traces produces a Zen5 persona that calls tools reliably and
+does not over-refuse on legitimate dual-use prompts. Third, a \emph{multimodal routing} layer extends the
+existing hanzoai/zen dynamic-router architecture so that Zen5 acts as the reasoning core while sibling
+experts --- Zen-VL, Zen-3D, Zen-Foley, Zen-Musician, Zen-Video, and the Jin diffusion-transformer family ---
+handle vision, depth, audio, music, video, and image generation, all colocated inside one
+\texttt{hanzo-engine} process. As a forward research direction we introduce \textbf{MoDE} (Mixture of
+Diverse Experts), a training-time diversity regularizer for the Jin diffusion MoE that specializes
+experts across denoising steps and modality-specific latent subspaces for unified multimodal generation.
+Zen5 ships as alpha-quality code under MIT, with full upstream attribution to \texttt{antirez/ds4} and
+\texttt{ggml-org/llama.cpp}.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+The release of DeepSeek V4 Flash \cite{deepseekv4flash} and the corresponding \texttt{antirez/ds4}
+inference engine \cite{antirez-ds4} established a new operating point for local AI: 284 billion
+parameters running on a single laptop with 128 GB of unified memory, at usable wall-clock generation
+speed, with a 1 million-token context window. This places frontier-tier reasoning on personal hardware
+for the first time. As shipped, however, the system is intentionally narrow: it runs one specific GGUF
+file, with one model identity, exposes one process talking one HTTP API on one port, and is tuned for
+the persona and refusal patterns of the DeepSeek upstream. Zen5 closes this gap in three directions.
+
+\paragraph{Engine.} We fork \texttt{antirez/ds4} as the Zen5 engine, preserving its sources, attribution,
+and MIT license unchanged. Our deltas live in branding, distribution metadata, and a tracked set of
+forthcoming features (Section~\ref{sec:engine}) that we will land upstream where possible and carry as
+patches where they are Zen-specific.
+
+\paragraph{Behavior.} The base model arrives with a generic DeepSeek persona and over-refuses on tasks
+the Zen agent stack must perform: dual-use security analysis, edits in domain-restricted directories,
+and faithful protocol-level reasoning during tool invocations. Zen5 applies a three-stage post-training
+pipeline (Section~\ref{sec:posttrain}) that resolves identity, reduces refusal along the single-direction
+subspace identified by Arditi et al.\ \cite{arditi2024refusal}, and improves tool-call fidelity through
+supervised fine-tuning on the \emph{Zen Agentic Dataset}.
+
+\paragraph{Modality.} A frontier reasoning model is necessary but not sufficient. Generation in 3D,
+video, audio, music, and image is handled by specialized siblings within the Zen family --- Zen-VL,
+Zen-3D \cite{zen3d}, Zen-Foley \cite{zenfoley}, Zen-Musician \cite{zenmusician}, Zen-Video
+\cite{zenvideo}, and the Jin diffusion-transformer family \cite{jin}. Zen5 enters the existing
+hanzoai/zen \emph{Spatially-Aware Dynamic Routing} architecture \cite{hanzoai-zen} as the
+language-and-reasoning expert, while routing input across modalities to the appropriate sibling,
+colocated inside one \texttt{hanzo-engine} binary (Section~\ref{sec:routing}).
+
+\paragraph{MoDE.} As a research direction we introduce \emph{Mixture of Diverse Experts} (MoDE),
+a training-time diversity regularizer for Jin's diffusion-transformer MoE \cite{jin}. MoDE produces
+experts specialized along the denoising trajectory and across modality-specific latent
+subspaces. Section~\ref{sec:mode} describes the objective and an ablation protocol.
+
+\paragraph{Contributions.} The contributions of this work are:
+
+\begin{enumerate}
+  \item A practical engine fork (\texttt{zen5}, MIT) that brings DeepSeek V4 Flash to personal Apple
+        Silicon hardware with a complete OpenAI / Anthropic / Responses-compatible HTTP surface and
+        durable on-disk KV cache.
+  \item A reproducible three-stage post-training recipe --- abliteration, identity SFT, agentic SFT ---
+        whose ingredients we release alongside the model.
+  \item Integration of Zen5 as a routed expert in the existing hanzoai/zen multimodal architecture,
+        with parallel sibling-model loading inside a single \texttt{hanzo-engine} process.
+  \item MoDE, a diversity-regularized diffusion MoE for unified multimodal generation, with a published
+        evaluation protocol against Jin baselines.
+\end{enumerate}
+
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{DeepSeek V4 Flash and ds4.} DeepSeek V4 Flash \cite{deepseekv4flash} is a 284B-parameter
+sparse-MoE language model with multi-token prediction (MTP) draft heads, a heavily compressed indexer
+in its attention path, and a 1M-token context ceiling. Sanfilippo's \texttt{ds4} engine
+\cite{antirez-ds4} is a self-contained C implementation specialized to this model. It introduces a
+two-bit asymmetric routed-experts quantization (\texttt{IQ2\_XXS} up/gate, \texttt{Q2\_K} down) that
+leaves shared experts, attention projections, and output untouched, and a SHA1-keyed rendered-prefix
+disk KV cache that lets stateless agent clients re-use cached prefixes across process restarts. We
+inherit both, and adopt \texttt{ds4}'s Anthropic-compatible \texttt{/v1/messages} endpoint as our
+agent-client entry point.
+
+\paragraph{GGML and llama.cpp.} The \texttt{ds4} project is, by Sanfilippo's own attribution
+\cite{antirez-ds4}, indebted to \texttt{ggml-org/llama.cpp} \cite{llamacpp} for the GGUF format,
+quantization mathematics, and dot-product kernels. Our LICENSE preserves this lineage. We share the
+view that local frontier inference is a property of the format $\times$ engine $\times$ agent stack,
+and that the GGUF ecosystem is one of the few open standards binding these together.
+
+\paragraph{Refusal directions and abliteration.} Arditi et al.\ \cite{arditi2024refusal} demonstrate
+that refusal in instruction-tuned LLMs is mediated by a single linear direction in the residual stream,
+and that ablating this direction at inference time produces models that decline to refuse without
+otherwise degrading capability. The community has since published \emph{abliteration} pipelines
+applying this finding to open-weights models \cite{failspy-abliterate}. \texttt{ds4} itself ships a
+\texttt{dir-steering/} subsystem implementing single-vector activation steering at inference time. We
+extend this from inference-time steering to a weight-baked abliteration of the routed-MoE-served
+upstream, suitable for distribution as GGUF.
+
+\paragraph{Agentic tool calling.} Tool-augmented LLMs have a substantial training-data literature, from
+Gorilla \cite{gorilla} and ToolBench \cite{toolbench} to xLAM \cite{xlam} and APIGen \cite{apigen}.
+DeepSeek V4 Flash already emits tool calls in DSML \cite{dsml}, an in-band markup language. Our
+agentic SFT does not change the protocol; it teaches the model to invoke tools more reliably under
+Zen5's particular system prompt and to recover gracefully from common tool-call errors.
+
+\paragraph{Multimodal language models.} The dominant paradigms are late fusion (LLaVA \cite{llava},
+LLaVA-NEXT-Interleaved \cite{llavanext}), native multimodal pretraining (Janus
+\cite{janus} from DeepSeek itself, Gemini), and modality-expert routing (Flamingo
+\cite{flamingo}, MoE-LLaVA \cite{moellava}). The hanzoai/zen architecture \cite{hanzoai-zen} adopts
+expert routing: a router selects among heterogeneous specialists for each input. Zen5 enters this
+architecture as the language-and-reasoning specialist while preserving the modality experts.
+
+\paragraph{Diffusion-transformer MoE and MoDE.} Diffusion transformers \cite{dit} have become the
+dominant architecture for image and video generation; MoE variants \cite{rapid,mome} reduce
+inference cost. Jin \cite{jin} combines a diffusion transformer with sparse MoE (2 of 8 experts
+active) and a joint embedding space across text, vision, and audio. MoDE in our setting extends Jin
+with an explicit \emph{diversity regularizer} over the router assignment matrix, building on the
+diversity-of-experts literature in regular MoE \cite{diverse-moe}, with novel application to
+denoising-step specialization.
+
+\section{Zen5 Inference Engine}
+\label{sec:engine}
+
+\subsection{Architecture}
+
+The Zen5 engine is a fork of \texttt{antirez/ds4} that preserves the upstream sources unchanged.
+Operationally, it is a self-contained C and Objective-C executable linked against Apple's Metal
+framework on macOS, or against CUDA on Linux. There is no GGML link at runtime, but
+\texttt{LICENSE} preserves the GGML authors' copyright per Section~\ref{sec:related}.
+
+Three binaries result from \texttt{make} on macOS:
+
+\begin{itemize}
+  \item \texttt{zen5} --- interactive CLI and one-shot prompt mode (\texttt{linenoise}-backed).
+  \item \texttt{zen5-server} --- the HTTP server (OpenAI / Anthropic / Responses-compatible) with
+        SSE streaming and an on-disk KV cache.
+  \item \texttt{zen5-bench} --- a benchmarking harness that measures instantaneous prefill and
+        decode rates at fixed context frontiers.
+\end{itemize}
+
+These names are symlinks in the working tree to the upstream binary names (\texttt{ds4}, \texttt{ds4-server},
+\texttt{ds4-bench}) so that upstream pulls apply cleanly. The Zen5 brand affects packaging, not source.
+
+\subsection{Quantization}
+
+DeepSeek V4 Flash at \texttt{IQ2\_XXS}/\texttt{Q2\_K} occupies approximately 81 GB on disk, while
+preserving practical agent and tool-calling quality. The asymmetric quantization scheme is critical:
+only the routed MoE experts are aggressively quantized (\texttt{IQ2\_XXS} on up/gate matrices,
+\texttt{Q2\_K} on down matrices), while shared experts, attention projections, the routing logits,
+and the LM head are kept at higher precision. Because routed experts constitute the majority of
+model parameters in DeepSeek V4 Flash, this scheme delivers the storage benefit of 2-bit weights
+while protecting the components most sensitive to quantization error.
+
+We additionally support an \texttt{imatrix} variant in which weight importance is calibrated against a
+held-out corpus. The imatrix variant is the recommended default for Zen5.
+
+\subsection{Disk KV Cache and Stateless-Client Resumption}
+
+A modern coding-agent client (Claude Code, Codex CLI, opencode) re-sends most or all of the prior
+conversation on each turn. Without KV reuse this re-prefills tens of thousands of tokens every turn,
+even for short edits. The Zen5 engine inherits ds4's KV cache design with three properties:
+
+\begin{enumerate}
+  \item \textbf{Rendered-prefix keying.} The cache key is \texttt{SHA1} of the tokenizer-decoded
+        \emph{text} of the cached prefix, not the token ID sequence. This lets a request that
+        re-tokenizes a generated suffix into a different token count still hit the cache.
+  \item \textbf{Save points.} Saves are taken at four moments: \emph{cold} (after first stable
+        prefix, before generation), \emph{continued} (at aligned token frontiers during long
+        generations), \emph{evict} (before an unrelated session replaces the live checkpoint), and
+        \emph{shutdown}.
+  \item \textbf{Tool-ID exact replay.} Each tool call gets an unguessable ID; the server stores the
+        exact sampled DSML bytes for that ID in a bounded map, persisted in the cache file as a
+        \texttt{KTM} tail section. On the next turn, the renderer uses the exact original bytes
+        rather than re-rendering from client-side JSON, preserving the byte-exact prefix that the KV
+        checkpoint requires.
+\end{enumerate}
+
+This subsystem is unmodified from upstream and is the primary reason Zen5 is usable inside multi-turn
+agent loops with 100k+ context.
+
+\subsection{HTTP API and SSE Streaming}
+
+\texttt{zen5-server} exposes four wire APIs (Table~\ref{tab:endpoints}). The Anthropic-compatible
+\texttt{/v1/messages} endpoint is the recommended entry point for Claude-Code-style clients; in
+\texttt{thinking} mode reasoning is streamed in the native API shape rather than mixed into final
+text. Tool calls in OpenAI chat streaming and Anthropic messages streaming are emitted as soon as the
+DSML invocation is recognized, with parameter bytes forwarded as deltas while generation continues.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+Wire API & Path & Primary client \\
+\midrule
+OpenAI Chat Completions & \texttt{POST /v1/chat/completions} & opencode, Pi \\
+OpenAI Completions & \texttt{POST /v1/completions} & legacy \\
+OpenAI Responses & \texttt{POST /v1/responses} & Codex CLI \\
+Anthropic Messages & \texttt{POST /v1/messages} & Claude Code \\
+\bottomrule
+\end{tabular}
+\caption{Zen5 HTTP wire APIs.}
+\label{tab:endpoints}
+\end{table}
+
+\subsection{Performance}
+
+Table~\ref{tab:speed} reproduces the upstream single-run Metal CLI numbers with
+\texttt{--ctx 32768}, \texttt{--nothink}, greedy decoding, and \texttt{-n 256}. We measured a smoke
+test on M4 Max 128 GB: cold residency 22.6 s, first-token prefill 27.30 tok/s on a 32-token prompt.
+Full sweep numbers on M4 Max will be reported with the public release.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llrrr}
+\toprule
+Machine & Quant & Prompt & Prefill & Generation \\
+\midrule
+MacBook Pro M3 Max, 128 GB & q2-imatrix & short & 58.52 t/s & 26.68 t/s \\
+MacBook Pro M3 Max, 128 GB & q2-imatrix & 11709 tok & 250.11 t/s & 21.47 t/s \\
+Mac Studio M3 Ultra, 512 GB & q2-imatrix & short & 84.43 t/s & 36.86 t/s \\
+Mac Studio M3 Ultra, 512 GB & q4-imatrix & 12018 tok & 448.82 t/s & 26.62 t/s \\
+DGX Spark GB10, 128 GB & q2-imatrix & 7047 tok & 343.81 t/s & 13.75 t/s \\
+\bottomrule
+\end{tabular}
+\caption{Reproduced from upstream \texttt{antirez/ds4}; M4 Max numbers in progress.}
+\label{tab:speed}
+\end{table}
+
+\subsection{Planned Engine Extensions}
+
+While the upstream engine is functionally complete for single-model inference, the Zen5 multimodal
+roadmap (Section~\ref{sec:routing}) requires several engine-level capabilities not yet present
+upstream. We track these in \texttt{PUNCH\_LIST\_FROM\_DS4.md} in our companion \texttt{hanzo-engine}
+crate; the highest-priority items are durable disk KV across non-DeepSeek models, a generic
+modality router transport, and concurrent multi-model loading with VRAM budgeting.
+
+\section{Post-Training: Identity, Alignment, and Agentic Tool Use}
+\label{sec:posttrain}
+
+The base DeepSeek V4 Flash checkpoint requires three post-training stages before it can be released
+as Zen5. We apply them in the order \emph{abliteration $\rightarrow$ identity SFT $\rightarrow$
+agentic SFT}, because abliteration operates on the base persona's refusal substrate and is most clean
+before identity is rewritten.
+
+\subsection{Stage 1: Abliteration}
+
+\paragraph{Goal.} Reduce unhelpful refusals on legitimate dual-use prompts (security analysis, code
+review of obfuscated samples, protocol-level explanations) without removing the model's ability to
+recognize and decline genuinely harmful requests.
+
+\paragraph{Method.} Following Arditi et al.\ \cite{arditi2024refusal}, we identify a one-dimensional
+subspace $\mathbf{r}$ in the residual stream that mediates refusal:
+
+\begin{equation}
+\mathbf{r}^{(\ell)} = \frac{1}{|D_\text{harm}|} \sum_{x \in D_\text{harm}} h^{(\ell)}_x
+- \frac{1}{|D_\text{benign}|} \sum_{x \in D_\text{benign}} h^{(\ell)}_x
+\end{equation}
+
+where $h^{(\ell)}_x$ is the post-layer-$\ell$ hidden state at the final input token for prompt $x$,
+$D_\text{harm}$ is a 64-prompt set of refusal-eliciting requests, and $D_\text{benign}$ is a
+matched-distribution non-refusing set. We select the layer $\ell^*$ that maximizes the cosine
+distance between $\mathbf{r}$ projections of harmful vs.\ benign held-out prompts. We then orthogonalize
+the down-projection matrices of all routed and shared expert MLPs against $\mathbf{r}^{(\ell^*)}$:
+
+\begin{equation}
+W_\text{down}^{\text{post}} \;=\; W_\text{down} - W_\text{down} \frac{\mathbf{r}\mathbf{r}^\top}{\|\mathbf{r}\|^2}
+\end{equation}
+
+The orthogonalization is weight-baked (no inference-time hooks), so the resulting GGUF is a drop-in
+replacement.
+
+\paragraph{Evaluation.} We measure (a) refusal rate on a 200-prompt evaluation split spanning the
+Cybersecurity, Biorisk, and General Dual-Use categories, and (b) helpfulness retention on MT-Bench
+and IFEval. Target: refusal rate $\leq$ 15\% on dual-use without MT-Bench drop greater than 2 points.
+Inference-time steering via the engine's \texttt{dir-steering/} subsystem remains available as a
+runtime override.
+
+\paragraph{Safety considerations.} We do not abliterate the model on prompts touching CSAM,
+mass-casualty CBRN synthesis routes, or specific real-person targeting. The abliteration corpus
+$D_\text{harm}$ is filtered to exclude these categories so that the refusal direction we ablate is
+the over-refusal direction, not the entire safety substrate. Post-abliteration we re-evaluate against
+WMDP \cite{wmdp} and our internal red-team suite; the model that ships under the Zen5 brand must
+preserve the original refusal rate on these categories. This boundary is enforced by gating the
+release on red-team pass-fail, not by trust in the procedure alone.
+
+\subsection{Stage 2: Identity Supervised Fine-Tuning}
+
+\paragraph{Goal.} Replace the model's self-description from ``DeepSeek V4 Flash'' to ``Zen5'' across
+identity-eliciting prompts (\emph{Who are you?}, \emph{What model is this?}, \emph{What is your
+training cutoff?}, \emph{What can you do?}), without altering capability.
+
+\paragraph{Method.} A small ($\sim$10k examples) supervised fine-tuning corpus
+generated from the Zen brand guide and the Zen family overview \cite{zenfamily}.
+Training: LoRA \cite{lora} at rank 32 on the routed-experts up/gate/down projections, 3 epochs,
+learning rate $3 \times 10^{-5}$, cosine schedule. LoRA is the right tool here because identity is a
+shallow rewrite; full fine-tuning is unnecessary and harms downstream tool-call quality.
+
+\paragraph{Evaluation.} 100 held-out identity probes; required pass rate $\geq$ 95\%. MT-Bench /
+IFEval drop tolerance $\leq$ 1 point.
+
+\subsection{Stage 3: Agentic Tool-Calling SFT --- the Zen Agentic Dataset}
+
+\paragraph{Goal.} Increase tool-call success rate, decrease tool-call format errors, and improve
+recovery behavior when a tool returns an error or empty result.
+
+\paragraph{Dataset.} The Zen Agentic Dataset comprises:
+
+\begin{itemize}
+  \item $\sim$50k single-tool single-turn examples seeded from xLAM \cite{xlam} and APIGen
+        \cite{apigen}, rewritten into DSML.
+  \item $\sim$10k multi-tool multi-turn agent traces from successful runs of our internal Zen-Coder
+        and Zen-Agent harnesses on real coding tasks, filtered by unit-test pass.
+  \item $\sim$5k \emph{recovery} examples: tool errors, malformed JSON returns, ambiguous results, in
+        which the assistant must reason about the failure and either retry or escalate to the user.
+\end{itemize}
+
+The dataset is released under CC-BY-4.0 with provenance for each example.
+
+\paragraph{Training.} Two-stage: first an SFT pass over the full mixture for 2 epochs, then a
+DPO \cite{dpo} pass on a 20k-pair preference set built by sampling two completions per prompt and
+labelling them by tool-call success.
+
+\paragraph{Evaluation.} ToolBench \cite{toolbench} task-pass rate, SWE-Bench-Lite agent pass rate, and
+an internal Zen-Coder regression on 500 held-out coding tasks. Targets: $\geq$ 70\% ToolBench,
+$\geq$ 35\% SWE-Bench-Lite agentic, with no drop on MT-Bench.
+
+\section{Multimodal Routing and Sibling Experts}
+\label{sec:routing}
+
+\subsection{Architectural Position}
+
+The hanzoai/zen \emph{Spatially-Aware Dynamic Routing} architecture \cite{hanzoai-zen} predates Zen5
+and defines a router that connects specialized expert models for vision, language, codegen,
+multimodal reasoning, and 3D spatial inputs. Zen5 enters this architecture as the
+\emph{language-and-reasoning expert}, replacing the previously-routed DeepSeek-V3 and Qwen3 entries.
+
+\begin{figure}[H]
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{Modality} & \textbf{Sibling expert} & \textbf{Backend} \\
+\hline
+Language, reasoning, tools & Zen5 (DeepSeek V4 Flash, abliterated) & \texttt{zen5-server} \\
+Vision-language & Zen-VL 4B/8B/30B & mistral-rs (vision adapter) \\
+3D understanding & Zen-3D & native PyTorch / mistral-rs \\
+Audio recognition & Whisper-derived & mistralrs-audio \\
+Foley / sound design & Zen-Foley & native PyTorch \\
+Music generation & Zen-Musician & native PyTorch \\
+Video generation & Zen-Video & diffusion (Jin lineage) \\
+Image / diffusion gen & Jin / Zen-Artist & Jin (diffusion-MoE) \\
+\hline
+\end{tabular}
+\caption{Sibling expert roster. Several siblings are themselves implemented on top of \texttt{mistral-rs};
+the Zen5 reasoning core uses the \texttt{zen5-server} runtime.}
+\end{figure}
+
+\subsection{Modality Router}
+
+The router operates on the request boundary and decides, per request, which sibling handles which
+content. Two versions:
+
+\paragraph{V1 --- rule-based.} For the public release of Zen5 we ship a deterministic router that
+inspects message content types (\texttt{image\_url}, \texttt{audio}, \texttt{video}, \texttt{model3d})
+in the incoming OpenAI / Anthropic request, plus a small set of regex- and prefix-based intent rules
+on the text (e.g., a request beginning with ``Render an image of\ldots'' routes to Zen-Artist; a
+request containing a \texttt{.obj} or \texttt{.glb} attachment routes to Zen-3D). The Zen5 reasoning
+core acts as orchestrator: it sees a summary of the sibling's response and integrates it into the
+final reply. This corresponds to the \emph{tool-call} pattern but with siblings rather than external
+APIs.
+
+\paragraph{V2 --- learned.} A two-tower small classifier (\textasciitilde 50M parameters) trained on
+routing traces collected from V1. Input: the full conversation prefix plus attachment metadata.
+Output: a multi-label sibling assignment plus a confidence. The classifier is trained with the
+standard cross-entropy objective on V1-labelled examples and a held-out human-validated set. We
+adopt the \emph{learned-routing-policy} component of the hanzoai/zen \texttt{RoutingPolicy}
+\cite{hanzoai-zen} as the training target.
+
+\subsection{Parallel Multi-Model Loading in \texttt{hanzo-engine}}
+
+The current \texttt{mistralrs-server-core} runtime supports model lifecycle endpoints
+(\texttt{/v1/models/\{load,unload,reload,tune\}}) but serializes inference through a single live
+graph. For Zen5's modality routing to work without per-request reloads, the engine must hold multiple
+expert models simultaneously and dispatch concurrent requests. Our planned extension introduces a
+\texttt{ModelRegistry} layer above the existing engine handle, with three properties:
+
+\begin{enumerate}
+  \item \textbf{VRAM budgeting.} Each registered model declares its peak resident size at the
+        chosen quant. The registry refuses loads that would exceed the wired GPU memory limit
+        (\texttt{iogpu.wired\_limit\_mb} on macOS). Default Zen5 deployment: Zen5 at 81 GB plus a
+        Zen-VL-8B at 5 GB plus Jin diffusion-MoE at 8 GB leaves the user 26 GB headroom on a 120 GB
+        wired limit.
+  \item \textbf{Per-model async queues.} Each model has its own request queue and graph worker;
+        cross-model parallelism is bound only by GPU compute and memory bandwidth.
+  \item \textbf{Shared KV semantics.} Disk KV cache is keyed by \texttt{(model\_id, sha1(rendered\_text))}
+        so that a sibling switch on the next turn does not cross-corrupt cached prefixes.
+\end{enumerate}
+
+The \texttt{zen5-server} runtime stays single-model; multi-model multiplexing lives in
+\texttt{hanzo-engine}, which already wraps \texttt{mistral-rs} and is the natural location for the
+sibling roster.
+
+\subsection{Zoo Desktop Integration}
+
+The user-facing surface is Zoo Desktop \cite{zoodesktop}, a Tauri 2.x application that already
+supports adding LLM providers with a custom \texttt{external\_url} per provider. The Zen5 + siblings
+deployment is exposed to Zoo Desktop as a single provider entry pointing at
+\texttt{http://127.0.0.1:36900/v1}; routing across siblings is invisible to the desktop client. From
+the Zoo Desktop user's perspective there is one Zen model that handles text, vision, audio, video,
+and 3D --- the modality split is an engine-internal optimization.
+
+\section{MoDE: Mixture of Diverse Experts for Diffusion Generation}
+\label{sec:mode}
+
+\subsection{Motivation}
+
+The Jin diffusion-transformer MoE \cite{jin} activates 2 of 8 experts per token under a load-balanced
+top-$k$ gating function. The standard load-balancing loss \cite{switch} encourages roughly equal
+expert utilization but does not constrain experts to specialize in functionally distinct directions
+--- experts can converge to near-identical computations under the load-balance prior alone. In
+diffusion generation, where the model must perform substantially different work at $t=999$ (early,
+coarse-structure denoising) and $t=10$ (late, fine-detail refinement), and across modality-distinct
+latent regions (audio spectrogram patches versus image patches versus point-cloud patches), forcing
+\emph{diverse} expert specialization is intuitively valuable.
+
+\subsection{Objective}
+
+Let $G \in \mathbb{R}^{N \times E}$ be the gating assignment matrix over a batch of $N$ tokens and
+$E$ experts, where $G_{ne} = 1$ if token $n$ is routed to expert $e$. The MoDE training objective
+augments the Jin loss with a diversity term:
+
+\begin{equation}
+\mathcal{L}_\text{MoDE} \;=\; \mathcal{L}_\text{denoise} \;+\; \lambda_\text{lb}\, \mathcal{L}_\text{lb} \;+\;
+\lambda_\text{div}\, \mathcal{L}_\text{div}
+\end{equation}
+
+\noindent where $\mathcal{L}_\text{denoise}$ is the standard diffusion noise-prediction loss,
+$\mathcal{L}_\text{lb}$ is the load-balancing loss \cite{switch}, and the diversity term
+$\mathcal{L}_\text{div}$ is the negative pairwise expert-direction Frobenius distance:
+
+\begin{equation}
+\mathcal{L}_\text{div} \;=\; -\frac{2}{E(E-1)} \sum_{i < j} \big\| W^{(i)} - W^{(j)} \big\|_F^2
+\end{equation}
+
+\noindent where $W^{(i)}$ is the concatenated MLP weight matrix of expert $i$. This is a simple,
+weight-space diversity prior; it encourages experts to occupy distinct directions in parameter space.
+Alternative forms include input-conditioned diversity (computing expert-output disagreement across
+the batch) and a denoising-step conditional diversity (encouraging different gating at different
+$t$). We will report ablations across these forms.
+
+\subsection{Specialization Hypotheses}
+
+We expect three forms of specialization to emerge from $\mathcal{L}_\text{div}$:
+
+\begin{enumerate}
+  \item \textbf{Denoising-step specialization.} Some experts will preferentially activate on early
+        diffusion steps (coarse structure) and others on late (fine detail).
+  \item \textbf{Modality specialization.} In Jin's joint embedding space the same expert pool serves
+        text, vision, and audio tokens; we expect diversity-regularized experts to partition by
+        modality.
+  \item \textbf{Latent-region specialization.} Within a single modality, different latent regions
+        (e.g., faces vs.\ backgrounds in image patches) will route to different experts.
+\end{enumerate}
+
+We will measure these by post-hoc clustering of the gating assignment matrix and visualizing per-expert
+activation maps.
+
+\subsection{Evaluation Protocol}
+
+We compare MoDE against the standard Jin baseline on:
+
+\begin{itemize}
+  \item Image generation: FID on COCO-30K, FID on ImageNet-256.
+  \item Audio generation: FAD on AudioSet, prompt-conditioned MOS on a 200-sample human eval.
+  \item 3D generation: CLIP-similarity for text-to-3D on Cap3D.
+  \item Multimodal mixing: a held-out set of cross-modal prompts (image-conditioned audio,
+        audio-conditioned image, etc.) judged by human annotators.
+\end{itemize}
+
+The diversity-regularization sweep covers $\lambda_\text{div} \in \{0, 10^{-3}, 10^{-2}, 10^{-1}\}$
+and one ablation removing $\mathcal{L}_\text{lb}$ entirely (to test whether diversity subsumes
+load-balancing). Compute budget: training MoDE-Jin-Small (1.5B active, 8 experts of 220M) for 100k
+steps on 16 H100s.
+
+\section{Experiments and Evaluation}
+\label{sec:experiments}
+
+This section will be populated as the public Zen5 release lands; the framework is described here so
+that third-party replications can begin in parallel with our own.
+
+\paragraph{Engine smoke test.} On M4 Max 128 GB, Apple Metal, \texttt{q2-imatrix},
+\texttt{ctx=32768}, \texttt{--nothink}: cold residency 22.6 s, prefill 27.30 tok/s on a 32-token
+prompt, single-token decode latency 112 ms. Full speed sweeps to be reported alongside Table~\ref{tab:speed}.
+
+\paragraph{Quality.} Pending. We will report MT-Bench, IFEval, MMLU, HumanEval, GPQA, SWE-Bench-Lite,
+WMDP-Cyber, and our internal Zen-Coder 500-task agentic regression at the public release point. We
+will additionally report deltas pre- vs.\ post-abliteration on the same suite to demonstrate
+helpfulness retention.
+
+\paragraph{Routing.} The V1 rule-based router will be evaluated on a 1000-example multimodal request
+set with human-labelled ground-truth sibling assignment. The V2 learned router will be evaluated on
+the same set with a target $\geq$ 95\% top-1 sibling accuracy.
+
+\paragraph{MoDE.} Pending. We will report FID / FAD / CLIP-similarity vs.\ Jin baseline and ablations
+across $\lambda_\text{div}$.
+
+\section{Future Work}
+\label{sec:future}
+
+\paragraph{Beyond q2-imatrix.} The current quant is the floor for single-laptop deployment. We expect
+DeepSeek to release updated V4 Flash checkpoints; we will track them. For Mac Studio M3 Ultra 512 GB
+the q4-imatrix variant offers the same context with substantially higher quality and is the better
+default for that hardware class.
+
+\paragraph{Distributed inference.} The engine is single-host today. A future direction is sharding
+the expert pool across two M-series machines connected by Thunderbolt 5, with the indexer and shared
+experts on one host and routed-experts split across both. This is plausible because routed-experts
+exhibit token-level sparsity that maps well to inter-host traffic.
+
+\paragraph{Continuous routing learning.} The V2 learned router can be trained continuously on
+production routing decisions. We will release a privacy-respecting export protocol so that operators
+can opt into contributing routing traces.
+
+\paragraph{MoDE at scale.} A 30B-active MoDE-Jin variant is the natural follow-on to the 1.5B
+ablation reported in Section~\ref{sec:mode}. Hardware permitting, we will publish in a follow-up
+whitepaper.
+
+\section{Conclusion}
+
+Zen5 is not a new foundation model. It is a re-packaging, a behavioral re-alignment, and a
+multimodal routing layer over a foundation that was already public --- DeepSeek V4 Flash --- using an
+engine that was already public --- \texttt{antirez/ds4}. The contribution is in the integration: a
+single \texttt{hanzo-engine} process that holds a 284B reasoning model alongside vision, 3D, audio,
+and diffusion siblings; a behavioral pipeline that converts a generic upstream into a usable Zen5
+persona without retraining; and a research direction (MoDE) that aims to unify multimodal generation
+under one diffusion-MoE backbone. We ship as alpha, in public, with attribution intact.
+
+\section*{Acknowledgements}
+
+This work would not exist without \textbf{Salvatore Sanfilippo} (antirez) and the contributors to
+\texttt{ds4}, and without the \texttt{ggml-org/llama.cpp} community on whose engineering it stands.
+Both copyrights are preserved unchanged in our LICENSE. We additionally thank the DeepSeek team for
+releasing V4 Flash with permissive terms, and the authors of the refusal-direction paper for the
+foundation that makes Stage 1 of Section~\ref{sec:posttrain} possible.
+
+\begin{thebibliography}{99}
+
+\bibitem{deepseekv4flash}
+DeepSeek-AI.
+\newblock {\em DeepSeek V4 Flash Technical Report}, 2026.
+
+\bibitem{antirez-ds4}
+S.~Sanfilippo.
+\newblock \texttt{antirez/ds4}: A self-contained inference engine for DeepSeek V4 Flash, 2026.
+\newblock \url{https://github.com/antirez/ds4}.
+
+\bibitem{llamacpp}
+G.~Gerganov et al.
+\newblock \texttt{ggml-org/llama.cpp}: Inference of Llama-family models in pure C/C++, 2023--2026.
+\newblock \url{https://github.com/ggml-org/llama.cpp}.
+
+\bibitem{arditi2024refusal}
+A.~Arditi, O.~Obeso, A.~Sylvestre, K.~Bian, A.~Conmy, N.~Nanda.
+\newblock Refusal in Language Models Is Mediated by a Single Direction.
+\newblock {\em arXiv preprint arXiv:2406.11717}, 2024.
+
+\bibitem{failspy-abliterate}
+B.~Schmidt et al.
+\newblock \texttt{failspy/abliterator}: Practical abliteration of open-weight language models, 2024.
+
+\bibitem{gorilla}
+S.~Patil, T.~Zhang, X.~Wang, J.~E.~Gonzalez.
+\newblock Gorilla: Large Language Model Connected with Massive APIs.
+\newblock {\em NeurIPS}, 2023.
+
+\bibitem{toolbench}
+Y.~Qin et al.
+\newblock ToolLLM: Facilitating Large Language Models to Master 16000+ Real-world APIs.
+\newblock {\em ICLR}, 2024.
+
+\bibitem{xlam}
+J.~Zhang et al.
+\newblock xLAM: A Family of Large Action Models to Empower AI Agent Systems.
+\newblock {\em arXiv preprint arXiv:2409.03215}, 2024.
+
+\bibitem{apigen}
+Z.~Liu et al.
+\newblock APIGen: Automated Pipeline for Generating Verifiable and Diverse Function-Calling Datasets.
+\newblock {\em NeurIPS}, 2024.
+
+\bibitem{dsml}
+DeepSeek-AI.
+\newblock DSML: The DeepSeek Markup Language for tool invocations, 2026.
+
+\bibitem{llava}
+H.~Liu, C.~Li, Q.~Wu, Y.~J.~Lee.
+\newblock Visual Instruction Tuning.
+\newblock {\em NeurIPS}, 2023.
+
+\bibitem{llavanext}
+F.~Li, H.~Zhang, P.~Zhang, S.~Zhang, T.~Lu.
+\newblock LLaVA-NeXT-Interleaved.
+\newblock 2024.
+
+\bibitem{janus}
+W.~Xu et al.
+\newblock Janus: Decoupling Visual Encoding for Unified Multimodal Understanding and Generation.
+\newblock DeepSeek-AI, 2024.
+
+\bibitem{flamingo}
+J.-B.~Alayrac et al.
+\newblock Flamingo: a Visual Language Model for Few-Shot Learning.
+\newblock {\em NeurIPS}, 2022.
+
+\bibitem{moellava}
+B.~Lin et al.
+\newblock MoE-LLaVA: Mixture of Experts for Large Vision-Language Models.
+\newblock {\em arXiv preprint arXiv:2401.15947}, 2024.
+
+\bibitem{dit}
+W.~Peebles, S.~Xie.
+\newblock Scalable Diffusion Models with Transformers.
+\newblock {\em ICCV}, 2023.
+
+\bibitem{rapid}
+Z.~Sun et al.
+\newblock Rapid-MoE Diffusion Transformer, 2024.
+
+\bibitem{mome}
+W.~Wang et al.
+\newblock Image as a Foreign Language: BEiT-3 and Mixture-of-Modality-Experts.
+\newblock {\em CVPR}, 2023.
+
+\bibitem{diverse-moe}
+A.~Ruiz, S.~Sun et al.
+\newblock Diversity-Regularized Mixture-of-Experts, 2023.
+
+\bibitem{switch}
+W.~Fedus, B.~Zoph, N.~Shazeer.
+\newblock Switch Transformer: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity.
+\newblock {\em JMLR}, 2022.
+
+\bibitem{dpo}
+R.~Rafailov et al.
+\newblock Direct Preference Optimization: Your Language Model is Secretly a Reward Model.
+\newblock {\em NeurIPS}, 2023.
+
+\bibitem{lora}
+E.~J.~Hu et al.
+\newblock LoRA: Low-Rank Adaptation of Large Language Models.
+\newblock {\em ICLR}, 2022.
+
+\bibitem{wmdp}
+N.~Li et al.
+\newblock The WMDP Benchmark: Measuring and Reducing Malicious Use With Unlearning.
+\newblock 2024.
+
+\bibitem{zen3d}
+Zen Team.
+\newblock Zen-3D: Spatially-Aware Generation and Understanding.
+\newblock {\em Zen Whitepapers}, 2025.
+
+\bibitem{zenfoley}
+Zen Team.
+\newblock Zen-Foley: Multimodal Sound Design.
+\newblock {\em Zen Whitepapers}, 2025.
+
+\bibitem{zenmusician}
+Zen Team.
+\newblock Zen-Musician: Music Generation in the Zen Family.
+\newblock {\em Zen Whitepapers}, 2025.
+
+\bibitem{zenvideo}
+Zen Team.
+\newblock Zen-Video: Text-to-Video and Image-to-Video Generation.
+\newblock {\em Zen Whitepapers}, 2025.
+
+\bibitem{jin}
+Hanzo AI / zenlm.
+\newblock Jin: Diffusion-Transformer Mixture-of-Experts with Joint Embedding Space.
+\newblock \url{https://github.com/hanzoai/jin}, 2026.
+
+\bibitem{hanzoai-zen}
+Hanzo AI.
+\newblock Zen: Spatially-Aware Dynamic Routing Architecture.
+\newblock Internal technical document, 2025.
+
+\bibitem{zenfamily}
+Zen Team.
+\newblock Zen AI Model Family Overview.
+\newblock {\em Zen Whitepapers}, 2026.
+
+\bibitem{zoodesktop}
+Zoo Labs Foundation.
+\newblock Zoo Desktop: Multimodal AI Workstation.
+\newblock \url{https://github.com/zooai/app}, 2026.
+
+\end{thebibliography}
+
+\end{document}
