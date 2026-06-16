@@ -13,7 +13,7 @@
 \definecolor{zenblue}{RGB}{41,121,255}
 \hypersetup{colorlinks=true,linkcolor=zenblue,urlcolor=zenblue,citecolor=zenblue}
 
-\title{\textbf{Zen Live-Dub: A License-Clean, Real-Time, Multi-Speaker\\ Cross-Lingual Video Dubbing System on Commodity GPUs}\\
+\title{\textbf{Zen Live-Dub: A Permissively Licensed, Real-Time, Multi-Speaker\\ Cross-Lingual Video Dubbing System on Commodity GPUs}\\
 \large Technical Report v2026.06}
 \author{Zen LM Research Team\\
 \texttt{research@zenlm.org}}
@@ -93,7 +93,7 @@ Pure GEMM ceiling (conv-equiv shapes) & --- & 2.6--4.4$\times$ \\
 
 Numerics are sound (per-shape cosine $\geq 0.9907$ across all 35 UNet shapes) \emph{only} when block scales use the cuBLAS \texttt{to\_blocked} $128\times4$ swizzle (output cosine $0.999997$); the naive padded layout produces numerical garbage (cosine $0.18$). The actionable conclusion is that a real FP4 win requires a \emph{fused} implicit-GEMM convolution---quantization in the mainloop, scales emitted in the swizzled layout---not an eager decomposition.
 
-\section{License-Clean Component Selection}
+\section{Permissively Licensed Component Selection}
 
 Selecting a commercially-usable clone-TTS is gated by the weights license, not capability. We audited the 2025--2026 field against primary sources (model-card metadata, training-set licenses, technical reports), distinguishing the license of the \emph{code} from that of the \emph{weights}, and the ability to clone an \emph{arbitrary} speaker from fixed voice packs (Table~\ref{tab:license}).
 
@@ -140,7 +140,7 @@ The license-disqualified IndexTTS-2 leads on raw similarity, but it cannot ship;
 
 Multi-speaker handling is a pipeline, not a model: streaming diarization tags who-speaks-when, each segment is matched against the registry (identification accuracy $\geq$95\% on the enrolled set; 0.01\,ms per query, scaling to thousands of entries), and per-speaker references drive the clone. Source separation (Demucs) isolates speech from the music/SFX bed so the dub is remixed under the preserved background ($+6$\,dB SI-SDR; 74\% of bed energy retained).
 
-\section{Governance, Provenance, and the License-Clean Visual Path}
+\section{Governance, Provenance, and the Permissively Licensed Visual Path}
 \label{sec:gov}
 
 A newsroom deployment must satisfy consent and disclosure law (e.g.\ the Tennessee ELVIS Act, in force; the EU AI Act Article~50 synthetic-audio disclosure requirement, effective August 2026). The pipeline enforces a signed, revocable consent record per governed voice, checked at synthesis time; an unconsented speaker is refused and routed to a silent hold. Provenance is a C2PA manifest whose \texttt{consent\_ref} foreign-key is verified coherent with the consent ledger. Synthetic-audio watermarking uses AudioSeal (MIT), which in our tests detected at 100\% (zero bit-error, zero false-positive) across clean, MP3-128k, AAC-128k, Opus-64k, and double-encoded chains, at 33.1\,dB SNR (PESQ 4.52). The end-to-end governed run passed 20/20 assertions on GPU.
