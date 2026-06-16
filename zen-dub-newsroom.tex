@@ -1,0 +1,207 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{geometry}
+\geometry{margin=1in}
+\definecolor{zenblue}{RGB}{41,121,255}
+\hypersetup{colorlinks=true,linkcolor=zenblue,urlcolor=zenblue,citecolor=zenblue}
+
+\title{\textbf{Zen Live-Dub: A License-Clean, Real-Time, Multi-Speaker\\ Cross-Lingual Video Dubbing System on Commodity GPUs}\\
+\large Technical Report v2026.06}
+\author{Zen LM Research Team\\
+\texttt{research@zenlm.org}}
+\date{June 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We present Zen Live-Dub, a production video-dubbing system that translates speech into another language while preserving each speaker's voice identity and lip synchronization, assembled entirely from permissively-licensed components and running in real time across two commodity machines. The work makes five contributions, each backed by direct measurement on a single NVIDIA GB10 (Grace-Blackwell, 121\,GB unified memory) and an AMD ``Strix Halo'' (Ryzen AI Max, 16 Zen5 cores). First, a systematic \emph{code-versus-weights} license audit that disqualifies several state-of-the-art clone-TTS models for commercial use (IndexTTS-2: non-commercial weights; F5-TTS: CC-BY-NC weights via the Emilia training set) and identifies Apache-2.0 alternatives. Second, a native lip-sync pipeline reaching \textbf{57\,fps} once we localize the bottleneck to per-frame PNG I/O rather than the diffusion UNet. Third, an FP4 kernel analysis showing eager \texttt{im2col} convolution is \emph{counterproductive} ($0.054\times$ versus f16) while fused implicit-GEMM offers a $\sim$4$\times$ ceiling. Fourth, a multi-speaker governed pipeline---diarization, a voice registry, a consent ledger, audio watermarking, and C2PA provenance. Fifth, a distributed two-node design that breaks the single-GPU throughput wall by offloading part of the text-to-speech (TTS) workload to a second machine over direct Ethernet, achieving $\leq$8\,s P95 sustained live latency with zero drops and \emph{no new hardware}. Throughout we follow an adversarial, measurement-first methodology and report honest limitations.
+\end{abstract}
+
+\section{Introduction}
+
+Automatic video dubbing---translating spoken content into a target language while keeping the speaker's voice and lip motion---is conventionally built as a cascade: speech recognition, machine translation, voice-cloning text-to-speech, and lip synchronization. Three problems block such a cascade from becoming a licensable product, and they are rarely addressed together:
+
+\begin{enumerate}
+  \item \textbf{Licensing.} The strongest open models frequently ship code under a permissive license but \emph{weights} under a non-commercial one, an asymmetry that silently disqualifies them for a commercial deployment.
+  \item \textbf{Real-time cost.} Diffusion lip-sync and autoregressive TTS are assumed to require data-center accelerators; the actual bottlenecks are often elsewhere.
+  \item \textbf{Governance.} A newsroom cannot ship synthetic voices without consent tracking, provenance, and disclosure that satisfy emerging law.
+\end{enumerate}
+
+Zen Live-Dub addresses all three on commodity hardware. We report what we measured, including results that contradicted our own initial assumptions, and we describe the adversarial development methodology that surfaced those contradictions.
+
+\section{System Architecture}
+
+The pipeline is a directed stage graph; each stage is a swappable component behind a stable interface:
+\[
+\text{ingest} \rightarrow \text{diarize} \rightarrow \text{registry+consent} \rightarrow \text{S2TT} \rightarrow \text{clone-TTS} \rightarrow \text{isochrony} \rightarrow [\text{lip-sync}] \rightarrow \text{remix} \rightarrow \text{watermark} \rightarrow \text{C2PA} \rightarrow \text{QA}.
+\]
+Speaker identity is not stored as a separate model per voice; it is a small embedding in a vector index. A registry of $N$ enrolled voices costs $N$ embeddings plus reference clips behind a \emph{single} TTS model, so the registry size is a vector-search problem rather than a GPU-memory problem. Concurrent speakers in one stream are capped at four by streaming diarization; offline diarization is unbounded.
+
+\section{Real-Time Lip Synchronization}
+
+\subsection{The bottleneck is I/O, not the kernel}
+
+Our lip-sync stage uses a Stable-Diffusion-derived UNet to regenerate the mouth region conditioned on the dubbed audio. The UNet alone runs at 152\,fps (f16, batch 8) in isolation, yet the end-to-end pipeline initially ran at 4\,fps. Profiling the production pipeline revealed it was executing in fp32 and---more importantly---spending 12.9\,ms/frame writing per-frame PNG files and 4.6\,ms/frame reading them back. Replacing per-frame PNG encode/read with a persistent raw-video pipe and a one-time frame preload, under fp16 with a tiny VAE decoder (TAESD), isolates the gain cleanly (Table~\ref{tab:io}).
+
+\begin{table}[H]
+\centering
+\caption{Lip-sync I/O fix, A/B at identical model path (sun6, cached avatar, bs8)}
+\label{tab:io}
+\begin{tabular}{lccc}
+\toprule
+Configuration & as-built ms/frame & e2e fps & model-path fps \\
+\midrule
+Legacy (per-frame PNG) & 40.99 & 24.40 & 53.05 \\
+Raw-video pipe + preload & 21.71 & 46.06 & 53.69 \\
+Pipe, sustained (5125 frames) & 17.54 & \textbf{57.02} & 70.51 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The model path is identical across configurations ($\sim$53\,fps), so the entire $+21.7$\,fps delta is the I/O change. The 57\,fps figure was verified by independently counting 5125 encoded frames and cross-checking wall-clock (84.9\,s) against process timing (89\,s). The headline lesson: the exotic kernel was never on the critical path to real-time lip-sync.
+
+\subsection{FP4 convolution: a disproven shortcut}
+
+We tested whether NVFP4 (4-bit) convolution via \texttt{im2col}~$+$~\texttt{\_scaled\_mm} accelerates the UNet on Blackwell. It does not, when activation quantization and \texttt{im2col} are honestly inside the timed region (Table~\ref{tab:fp4}). The matrix-multiply primitive is genuinely fast (2.6--4.4$\times$ versus bf16), but the surrounding cost dominates: dynamic activation quantization is 90\% of runtime and explicit \texttt{im2col} alone exceeds the entire cuDNN f16 convolution stack.
+
+\begin{table}[H]
+\centering
+\caption{Eager FP4 convolution versus f16 (whole UNet conv stack, batch 8)}
+\label{tab:fp4}
+\begin{tabular}{lcc}
+\toprule
+Path & Time (ms) & Speedup vs f16 \\
+\midrule
+cuDNN f16 (baseline) & 25.5 & 1.00$\times$ \\
+Eager NVFP4 \texttt{im2col}+\texttt{\_scaled\_mm} & 470.4 & \textbf{0.054$\times$} \\
+\;\;-- of which activation quant & 422.7 & --- \\
+\;\;-- of which \texttt{im2col} & 34.4 & --- \\
+\;\;-- of which FP4 GEMM & 6.2 & --- \\
+Pure GEMM ceiling (conv-equiv shapes) & --- & 2.6--4.4$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Numerics are sound (per-shape cosine $\geq 0.9907$ across all 35 UNet shapes) \emph{only} when block scales use the cuBLAS \texttt{to\_blocked} $128\times4$ swizzle (output cosine $0.999997$); the naive padded layout produces numerical garbage (cosine $0.18$). The actionable conclusion is that a real FP4 win requires a \emph{fused} implicit-GEMM convolution---quantization in the mainloop, scales emitted in the swizzled layout---not an eager decomposition.
+
+\section{License-Clean Component Selection}
+
+Selecting a commercially-usable clone-TTS is gated by the weights license, not capability. We audited the 2025--2026 field against primary sources (model-card metadata, training-set licenses, technical reports), distinguishing the license of the \emph{code} from that of the \emph{weights}, and the ability to clone an \emph{arbitrary} speaker from fixed voice packs (Table~\ref{tab:license}).
+
+\begin{table}[H]
+\centering
+\caption{Clone-TTS license and capability audit (weights, not code)}
+\label{tab:license}
+\begin{tabular}{lccl}
+\toprule
+Model & Weights license & Arbitrary clone & Verdict \\
+\midrule
+Qwen3-TTS (open) & Apache-2.0 & yes & \textbf{adopt} \\
+CosyVoice 3 (0.5B) & Apache-2.0 & yes & backup \\
+IndexTTS-2 & Bilibili (non-comm.) & yes & reject \\
+F5-TTS & CC-BY-NC-4.0 (Emilia) & yes & reject \\
+Kokoro-82M & Apache-2.0 & no (fixed voices) & reject \\
+Qwen3-TTS-Flash & none (hosted API) & yes & reject \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two traps recur. The \emph{code-versus-weights} trap: F5-TTS code is MIT but its checkpoint inherits CC-BY-NC from the Emilia dataset, and the maintainer confirms that fine-tuning does not relicense it. The \emph{fixed-voice} trap: Kokoro is Apache-2.0 but offers a closed set of voice packs and cannot clone a target speaker. The same audit applies to lip-sync: the diffusion UNet weights carry a permissive (OpenRAIL-M) license, but the conventional blend mask depends on a BiSeNet face-parser trained on the non-commercial CelebAMask-HQ. We replace it with a FAN-2D-4 landmark blend (BSD), removing the only hard non-commercial dependency in the visual path while preserving quality (Section~\ref{sec:gov}).
+
+\section{Voice Cloning}
+
+The adopted backbone, Qwen3-TTS (open, Apache-2.0), performs zero-shot cross-lingual cloning from a short reference (Table~\ref{tab:voice}). The shipping use case---a Chinese reference producing English output in the same voice---is the demanding ``cross-lingual'' row; identity is measured as speaker-embedding cosine and intelligibility as round-trip word error rate (WER).
+
+\begin{table}[H]
+\centering
+\caption{Cross-lingual zero-shot clone (zh reference $\rightarrow$ target), speaker cosine}
+\label{tab:voice}
+\begin{tabular}{lccc}
+\toprule
+Engine & cross-ling. cosine & WER & license \\
+\midrule
+Qwen3-TTS (open) & \textbf{0.871} & $\sim$0.0 & Apache-2.0 \\
+CosyVoice 3 & 0.835 & 0.0 & Apache-2.0 \\
+IndexTTS-2 (disqualified) & 0.935 & 0.02 & non-commercial \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The license-disqualified IndexTTS-2 leads on raw similarity, but it cannot ship; Qwen3-TTS is the best \emph{usable} option and additionally repairs a coverage failure: IndexTTS-2's tokenizer cannot encode accented Latin characters, emitting nothing for Spanish, French, and German, whereas Qwen3-TTS supports ten languages natively (English 0.924, French 0.935, German 0.902; Spanish 0.888, intelligible but below a 0.90 gate, motivating a 0.88 newsroom floor).
+
+Multi-speaker handling is a pipeline, not a model: streaming diarization tags who-speaks-when, each segment is matched against the registry (identification accuracy $\geq$95\% on the enrolled set; 0.01\,ms per query, scaling to thousands of entries), and per-speaker references drive the clone. Source separation (Demucs) isolates speech from the music/SFX bed so the dub is remixed under the preserved background ($+6$\,dB SI-SDR; 74\% of bed energy retained).
+
+\section{Governance, Provenance, and the License-Clean Visual Path}
+\label{sec:gov}
+
+A newsroom deployment must satisfy consent and disclosure law (e.g.\ the Tennessee ELVIS Act, in force; the EU AI Act Article~50 synthetic-audio disclosure requirement, effective August 2026). The pipeline enforces a signed, revocable consent record per governed voice, checked at synthesis time; an unconsented speaker is refused and routed to a silent hold. Provenance is a C2PA manifest whose \texttt{consent\_ref} foreign-key is verified coherent with the consent ledger. Synthetic-audio watermarking uses AudioSeal (MIT), which in our tests detected at 100\% (zero bit-error, zero false-positive) across clean, MP3-128k, AAC-128k, Opus-64k, and double-encoded chains, at 33.1\,dB SNR (PESQ 4.52). The end-to-end governed run passed 20/20 assertions on GPU.
+
+For the visual path, the FAN-landmark blend that removes the BiSeNet/CelebAMask-HQ dependency is statistically indistinguishable from the original: lip-sync error LSE-C $=6.924$ at audio-video offset $-2$, within $0.005$ of the BiSeNet baseline ($6.93$), with composite fidelity 47.85\,dB PSNR / 0.993 SSIM. The visual path is therefore license-clean with no measurable quality cost.
+
+\section{Distributed Two-Node Real-Time Dubbing}
+
+\subsection{The single-GPU wall is utilization, not speed}
+
+For live operation we target the latency budget of broadcast, not of conversation: live television runs a 5--10\,s safety delay and captions average $\sim$5.6\,s, so a 3--8\,s speech-in-to-dubbed-speech-out window is acceptable. On one GB10, the streaming orchestrator is correct (bounded queues, in-order release, graceful drop-oldest under overload) but cannot meet the budget: a single TTS worker pinned at $\sim$90\% busy accumulates head-of-line queue residency, pushing end-to-end P50 to 37.6\,s. Critically, a \emph{second} TTS worker on the \emph{same} GPU does not help---the two contend for the same compute, doubling per-unit service time for no net throughput.
+
+\subsection{Offloading TTS to a second machine}
+
+The constraint is throughput on one accelerator, and the data exchanged (16\,kHz mono audio plus a reference clip) is tiny. We therefore place a second TTS node on a separate machine connected by direct Ethernet (measured: 0.41\,ms RTT, 2.15\,Gbit/s; per-unit transport overhead 4--6\,ms). The second node is an AMD Strix Halo whose GPU path is blocked by a non-CUDA tooling gap (the DirectML backend rejects the model's fused \texttt{GroupQueryAttention} op), so it runs a permissively-licensed clone-TTS (Chatterbox-ONNX) on its 16 CPU cores at real-time factor $0.94$--$0.97$. Because the two nodes do not share an accelerator, the contention vanishes (Table~\ref{tab:dist}).
+
+\begin{table}[H]
+\centering
+\caption{Live streaming latency, 3.2-minute sustained run}
+\label{tab:dist}
+\begin{tabular}{lccccc}
+\toprule
+Configuration & P50 (s) & P95 (s) & drops & spark util & evo util \\
+\midrule
+1 node (GB10) & 37.6 & --- & --- & $\sim$90\% & --- \\
+2 workers, 1 GPU & 54.8 & --- & 6 & 191\% & --- \\
+2 nodes (GB10 + Strix Halo) & \textbf{4.04} & \textbf{6.14} & \textbf{0} & 68\% & 63\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A balanced split ($\sim$53\% local GPU / 47\% remote CPU) with short commit units drops each node below 90\% busy; queue residency collapses and the entire latency distribution falls under the 8\,s budget (max 7.92\,s) with zero drops over 3.2 minutes, while per-speaker identity is preserved (cosine 0.866/0.878 across nodes). Aggregate throughput is $2.19\times$ real time. We explicitly tested and rejected a three-slot configuration: a second CPU worker oversubscribes the 16-core machine, inflating tail latency. The result is real-time dubbing on two existing commodity machines with no new hardware; the throughput law is
+\[
+\text{sustained rate} = \tfrac{1}{\max_i \text{service}_i}, \qquad
+\text{e2e latency} = \sum_i \text{service}_i + \text{queue} + \text{jitter},
+\]
+and distributing the dominant stage across non-shared resources is what makes both quantities fit.
+
+\section{Methodology: Adversarial, Measurement-First Development}
+
+The system was built and validated by a fleet of cooperating agents under a discipline of \emph{honesty over success}: build, then independently red-team, then prove on hardware, with claims rejected unless backed by a measured number. This methodology repeatedly caught errors that a success-oriented process would have shipped: a re-blend harness that reported ``LSE-C parity'' while in fact desyncing audio by 15 frames (caught by calibrating the evaluator against a known-good clip); a headline ``57\,fps over 5125 frames'' that was real but whose frame count required independent recounting because an intermediate file had been trimmed; and a composite-fidelity number that had been measured but never persisted to disk. We regard the disproven results (eager FP4 convolution; single-GPU live real-time) as first-class contributions: a cleanly measured negative result is what redirected effort to the changes that worked.
+
+\section{Limitations}
+
+We report the following honestly. (1) Spanish clone similarity (0.888) sits just under a 0.90 gate; it is intelligible but motivates either a 0.88 editorial-review floor or longer enrolled references. (2) Per-1\,s-fragment speaker cosine reads $\sim$0.74 on short streaming units (a d-vector stability artifact, equal on both nodes); the continuous-track perceptual measure clears 0.85, but tightening the fragment measure trades against the latency budget. (3) More than four concurrent live speakers (overlapping crosstalk) remains unsolved industry-wide; we degrade gracefully rather than fail silently. (4) The second node runs on CPU because the AMD GPU path is blocked by the DirectML \texttt{GroupQueryAttention} gap; a faster path (a GQA-decomposed ONNX export, or ROCm on native Linux) would add headroom beyond the 8\,s budget. (5) Quality is reported on a limited clip family; broad multi-face, multi-language, and long-duration generalization is future work.
+
+\section{Conclusion}
+
+Zen Live-Dub demonstrates that a license-clean, multi-speaker, cross-lingual video dub---offline and live---is achievable on commodity hardware. The decisive engineering insights were not the expected ones: real-time lip-sync was gated by per-frame I/O rather than the diffusion kernel; commercial viability was gated by weights licenses rather than model quality; and live real-time was gated by single-accelerator utilization rather than raw speed, broken by offloading the dominant stage to a second machine over a direct link. Every shipping component is permissively licensed and every headline number was independently verified. The remaining gaps are throughput headroom and quality generalization, not architecture or license.
+
+\begin{thebibliography}{99}
+\bibitem{musetalk} Zhang, Y. et al. MuseTalk: Real-Time High-Quality Lip Synchronization with Latent Space Inpainting. \textit{arXiv:2410.10122}, 2024.
+\bibitem{latentsync} Li, C. et al. LatentSync: Audio Conditioned Latent Diffusion Models for Lip Sync. \textit{arXiv:2412.09262}, 2024.
+\bibitem{cosyvoice} Du, Z. et al. CosyVoice 3: Towards In-the-Wild Speech Generation. \textit{arXiv:2505.17589}, 2025.
+\bibitem{qwen3tts} Qwen Team. Qwen3-TTS Technical Report. \textit{arXiv:2601.15621}, 2026.
+\bibitem{audioseal} San Roman, R. et al. Proactive Detection of Voice Cloning with Localized Watermarking (AudioSeal). \textit{ICML}, 2024.
+\bibitem{c2pa} Coalition for Content Provenance and Authenticity. C2PA Technical Specification v2.2, 2025.
+\bibitem{sortformer} Park, T. et al. Sortformer: Streaming Speaker Diarization. \textit{arXiv:2409.06656}, 2024.
+\bibitem{nvfp4} NVIDIA. NVFP4 and the Blackwell Tensor Core Microscaling Formats. Technical Documentation, 2025.
+\bibitem{emilia} He, H. et al. Emilia: A Large-Scale, In-the-Wild Multilingual Speech Dataset. \textit{arXiv:2407.05361}, 2024.
+\bibitem{euai} European Union. Regulation (EU) 2024/1689 (Artificial Intelligence Act), Article 50, 2024.
+\end{thebibliography}
+
+\end{document}
