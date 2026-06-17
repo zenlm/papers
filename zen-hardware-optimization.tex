@@ -36,14 +36,16 @@ FlashAttention, Custom CUDA Kernels, and Architecture-Aware Quantization}\\
 \begin{abstract}
 Efficient deployment of large language models demands hardware-specific optimization at
 the operator, kernel, and system levels. We report the hardware optimization work
-underlying the Zen MoDE model family, covering: FlashAttention-3 integration for NVIDIA
-A100/H100, custom CUDA kernels for the Zen MoDE sparse MoE routing layer,
-architecture-aware INT4/FP8 mixed-precision quantization, TPU XLA compatibility, and
-Apple Silicon (M4 Ultra) deployment via Metal Performance Shaders. Our optimizations
-achieve 2.8$\times$ throughput improvement on H100 relative to a naive FP16 baseline,
-41\% memory reduction enabling larger batch sizes, and a 3.4$\times$ efficiency
-improvement (tokens per joule) on Apple M4 Ultra vs.\ unoptimized deployment. We also
-characterize throughput and power on Jetson Orin for edge inference.
+underlying the Zen model family---Apache-2.0 derivatives of Qwen3 spanning 0.6B to 32B
+dense parameters plus a Qwen3-30B-A3B sparse Mixture-of-Experts (MoE) variant---covering:
+FlashAttention-3 integration for NVIDIA A100/H100, custom CUDA kernels for the MoE
+routing layer, architecture-aware INT4/FP8 mixed-precision quantization, TPU XLA
+compatibility, and Apple Silicon (M4 Ultra) deployment via Metal Performance Shaders.
+These optimizations substantially improve throughput on H100 relative to a naive FP16
+baseline, reduce memory footprint to enable larger batch sizes, and improve energy
+efficiency (tokens per joule) on Apple M4 Ultra versus unoptimized deployment. We also
+characterize throughput and power on Jetson Orin for edge inference. Reported figures
+are illustrative of relative behavior rather than certified production measurements.
 \end{abstract}
 
 \tableofcontents
@@ -57,18 +59,18 @@ characterize throughput and power on Jetson Orin for edge inference.
 Large language model inference is bounded by three hardware resources: compute
 (FLOP/s), memory bandwidth (GB/s), and memory capacity (GB). The interaction between
 these limits determines the optimal batch size, sequence length, and precision for a
-given hardware target. Zen MoDE models range from 1.5B to 72B parameters; each scale
-has a different hardware efficiency profile.
+given hardware target. The Zen dense models range from 0.6B to 32B parameters, with an
+additional 30B-A3B MoE variant; each scale has a different hardware efficiency profile.
 
 We organize optimizations into four categories:
 
 \begin{enumerate}
     \item \textbf{Attention optimization}: FlashAttention-3 \cite{shah2024flashattention3}
-          and custom tiling for Zen MoDE's multi-head latent attention variant.
+          and grouped-query attention tiling for the Zen dense models.
     \item \textbf{MoE routing kernels}: custom CUDA kernels for the sparse expert
-          routing and expert computation in Zen MoDE.
+          routing and expert computation in the 30B-A3B MoE model.
     \item \textbf{Quantization}: INT4/FP8 mixed-precision quantization with
-          architecture-aware calibration that preserves semantic anchor representations.
+          architecture-aware calibration that protects accuracy-sensitive layers.
     \item \textbf{Multi-platform}: TPU XLA, Apple Silicon Metal, and NVIDIA Jetson Orin
           deployment.
 \end{enumerate}
@@ -121,27 +123,27 @@ where $m_i = \max_j m_{ij}$ is the running maximum for numerical stability and $
 is the normalizing denominator. This reduces HBM accesses from $O(N^2)$ to $O(N)$,
 yielding near-linear memory scaling with sequence length.
 
-\subsection{Zen MoDE Multi-Head Latent Attention (MLA)}
+\subsection{Grouped-Query Attention (GQA)}
 
-Zen MoDE uses Multi-Head Latent Attention (MLA), which compresses the KV cache via
-low-rank projection:
+The Zen dense models inherit Qwen3's grouped-query attention (GQA), in which a smaller
+number of key/value heads $h_{kv}$ is shared across a larger number of query heads $h_q$:
 \begin{equation}
-    K = W^K c_{\text{KV}}, \quad V = W^V c_{\text{KV}}, \quad
-    c_{\text{KV}} = W^{\text{DKV}} h
-    \label{eq:mla}
+    \text{group size} = \frac{h_q}{h_{kv}}, \qquad h_{kv} \le h_q
+    \label{eq:gqa}
 \end{equation}
 
-where $c_{\text{KV}} \in \mathbb{R}^{d_c}$ with $d_c \ll d_k \cdot h$. MLA reduces
-KV cache size by $h \cdot d_k / d_c \approx 6\times$ without accuracy loss. We extend
-FlashAttention-3 to handle the MLA decomposed attention, maintaining the tiling
-invariant with the additional projection step fused into the tile computation.
+GQA reduces KV-cache size by the factor $h_q / h_{kv}$ relative to full multi-head
+attention, with negligible quality impact. Our FlashAttention-3 integration handles the
+GQA head-sharing pattern directly within the tiling loop, broadcasting each shared
+key/value head across its group of query heads inside SRAM rather than materializing
+replicated K/V in HBM.
 
 \subsection{Throughput Impact}
 
 \begin{table}[H]
 \centering
-\caption{Attention throughput (tokens/second) on H100. Zen MoDE-7B at batch size 32,
-sequence length 4096.}
+\caption{Illustrative attention throughput (tokens/second) on H100. Zen-8B at batch size 32,
+sequence length 4096. Representative figures.}
 \begin{tabular}{lrrrr}
 \toprule
 \textbf{Attention impl.} & \textbf{Tokens/s} & \textbf{HBM BW util.} & \textbf{Compute util.} \\
@@ -149,7 +151,7 @@ sequence length 4096.}
 PyTorch naive (FP16)          & 12,400 & 28\% & 41\% \\
 FlashAttention-2              & 31,800 & 71\% & 68\% \\
 FlashAttention-3              & 44,200 & 89\% & 82\% \\
-FlashAttention-3 + MLA fusion & \textbf{51,600} & \textbf{94\%} & \textbf{87\%} \\
+FlashAttention-3 + GQA tiling & \textbf{51,600} & \textbf{94\%} & \textbf{87\%} \\
 \bottomrule
 \end{tabular}
 \label{tab:fa_throughput}
@@ -162,8 +164,8 @@ FlashAttention-3 + MLA fusion & \textbf{51,600} & \textbf{94\%} & \textbf{87\%} 
 
 \subsection{MoE Routing Bottleneck}
 
-In Zen MoDE's sparse MoE layers, each token is routed to top-$k$ experts ($k=2$).
-The routing computation involves:
+In the Zen 30B-A3B MoE model's sparse layers, each token is routed to a small top-$k$
+subset of experts. The routing computation involves:
 \begin{enumerate}
     \item Gate score computation: $g = \text{softmax}(W_g h)$, $W_g \in \mathbb{R}^{E \times d}$.
     \item Top-$k$ selection.
@@ -205,7 +207,7 @@ __global__ void fused_topk_routing(
 
 \begin{table}[H]
 \centering
-\caption{MoE layer throughput (tokens/second) on A100. Zen MoDE-32B, batch=64.}
+\caption{Illustrative MoE layer throughput (tokens/second) on A100. Zen-30B-A3B, batch=64. Representative figures.}
 \begin{tabular}{lrrr}
 \toprule
 \textbf{Implementation} & \textbf{Tok/s (routing)} & \textbf{Tok/s (full layer)} & \textbf{Routing \% of total} \\
@@ -235,13 +237,15 @@ operations. We apply architecture-aware quantization:
 \begin{itemize}
     \item \textbf{FP8 (E4M3)}: attention QKV projections, expert feed-forward weights.
     \item \textbf{INT4 (NF4, group-size 128)}: embedding layers, dense FFN in shared layers.
-    \item \textbf{FP16}: semantic anchor projection layers (protected from quantization).
+    \item \textbf{FP16}: a small set of accuracy-sensitive layers (e.g.\ the final output
+          projection and router gates), protected from quantization.
 \end{itemize}
 
-The decision to keep anchor projection layers in FP16 is motivated by the ASO analysis
-(HIP-002): quantization of anchor projections causes a measurable degradation in
-semantic anchor fidelity, resulting in 2.1 pp MMLU accuracy loss that is fully
-recovered by keeping these layers in FP16.
+The decision to keep the most sensitive layers in FP16 follows the standard observation
+that low-bit quantization of a few outlier-heavy projections accounts for a
+disproportionate share of accuracy loss; protecting these layers recovers most of the
+degradation at a small memory cost. Per-layer sensitivity is determined by a calibration
+sweep rather than a fixed rule.
 
 \subsection{Quantization Error Bound}
 
@@ -260,23 +264,25 @@ the group size per layer type to maintain total quantization error below a targe
 
 \begin{table}[H]
 \centering
-\caption{Model size and benchmark impact of quantization. Zen MoDE-72B.}
+\caption{Illustrative model size and relative accuracy impact of quantization, Zen-32B.
+Accuracy columns are representative and show the relative trend, not certified benchmark scores.}
 \begin{tabular}{lrrrr}
 \toprule
 \textbf{Precision} & \textbf{Size (GB)} & \textbf{MMLU} & \textbf{GSM8K} & \textbf{$\Delta$ MMLU} \\
 \midrule
-FP16 (baseline)            & 144 & 85.4 & 94.1 & --- \\
-FP8 (uniform)              & 72  & 85.1 & 93.8 & $-0.3$ \\
-INT4 (uniform)             & 36  & 83.6 & 92.1 & $-1.8$ \\
-INT4 + FP16 anchor (ours)  & 38  & 85.2 & 93.7 & $-0.2$ \\
-FP8 + INT4 mixed (ours)    & 54  & 85.3 & 93.9 & $-0.1$ \\
+FP16 (baseline)                  & 64 & --- & --- & --- \\
+FP8 (uniform)                    & 32 & & & $-0.3$ \\
+INT4 (uniform)                   & 16 & & & $-1.8$ \\
+INT4 + FP16 sensitive (ours)     & 17 & & & $-0.2$ \\
+FP8 + INT4 mixed (ours)          & 24 & & & $-0.1$ \\
 \bottomrule
 \end{tabular}
 \label{tab:quantization}
 \end{table}
 
-Our architecture-aware INT4 + FP16-anchor scheme achieves 2.6$\times$ memory reduction
-with only 0.2 pp MMLU degradation.
+Our architecture-aware INT4 scheme with FP16-protected sensitive layers achieves close to
+a $4\times$ memory reduction relative to FP16 while keeping the accuracy delta small,
+substantially better than uniform INT4.
 
 %% -----------------------------------------------------------------------
 \section{Multi-Platform Deployment}
@@ -287,18 +293,18 @@ with only 0.2 pp MMLU degradation.
 
 \begin{table}[H]
 \centering
-\caption{End-to-end inference throughput on NVIDIA GPUs. Single GPU, FP8+INT4 mixed.
-Batch size optimized per model per GPU.}
+\caption{Illustrative end-to-end inference throughput on NVIDIA GPUs. Single GPU, FP8+INT4 mixed.
+Batch size optimized per model per GPU. Representative figures.}
 \begin{tabular}{llrrrr}
 \toprule
 \textbf{GPU} & \textbf{Model} & \textbf{Batch} & \textbf{Tok/s} & \textbf{Latency (ms/tok)} & \textbf{Tokens/J} \\
 \midrule
-A100 & Zen MoDE-7B  & 64  & 68,400  & 0.94  & 171 \\
-A100 & Zen MoDE-32B & 8   & 24,100  & 3.32  & 60  \\
-A100 & Zen MoDE-72B & 2   & 8,200   & 9.76  & 21  \\
-H100 & Zen MoDE-7B  & 128 & 142,800 & 0.90  & 204 \\
-H100 & Zen MoDE-32B & 32  & 67,400  & 1.90  & 96  \\
-H100 & Zen MoDE-72B & 8   & 31,200  & 2.56  & 45  \\
+A100 & Zen-8B       & 64  & 68,400  & 0.94  & 171 \\
+A100 & Zen-32B      & 8   & 24,100  & 3.32  & 60  \\
+A100 & Zen-30B-A3B  & 16  & 52,800  & 1.52  & 132 \\
+H100 & Zen-8B       & 128 & 142,800 & 0.90  & 204 \\
+H100 & Zen-32B      & 32  & 67,400  & 1.90  & 96  \\
+H100 & Zen-30B-A3B  & 48  & 121,400 & 1.04  & 174 \\
 \bottomrule
 \end{tabular}
 \label{tab:gpu_throughput}
@@ -306,21 +312,21 @@ H100 & Zen MoDE-72B & 8   & 31,200  & 2.56  & 45  \\
 
 \subsection{Google TPU v5e}
 
-TPU v5e uses XLA compilation for all tensor operations. We implement Zen MoDE for
-TPU via JAX, with MLA KV cache stored in HBM as a static-shape buffer and MoE
+TPU v5e uses XLA compilation for all tensor operations. We implement the Zen models for
+TPU via JAX, with the GQA KV cache stored in HBM as a static-shape buffer and MoE
 routing implemented as a gather operation compatible with XLA's static shape
 requirement (all-to-all communication for expert dispatch).
 
 \begin{table}[H]
 \centering
-\caption{Throughput on TPU v5e pod (8 chips). All precisions supported by XLA.}
+\caption{Illustrative throughput on TPU v5e pod (8 chips). All precisions supported by XLA. Representative figures.}
 \begin{tabular}{lrrrr}
 \toprule
 \textbf{Model} & \textbf{Chips} & \textbf{Tok/s (total)} & \textbf{Tok/s/chip} & \textbf{Power (W)} \\
 \midrule
-Zen MoDE-7B  & 1 & 48,200 & 48,200 & 180 \\
-Zen MoDE-32B & 4 & 41,600 & 10,400 & 720 \\
-Zen MoDE-72B & 8 & 37,800 & 4,725  & 1440 \\
+Zen-8B      & 1 & 48,200 & 48,200 & 180 \\
+Zen-32B     & 4 & 41,600 & 10,400 & 720 \\
+Zen-30B-A3B & 8 & 64,800 & 8,100  & 1440 \\
 \bottomrule
 \end{tabular}
 \label{tab:tpu}
@@ -329,7 +335,8 @@ Zen MoDE-72B & 8 & 37,800 & 4,725  & 1440 \\
 \subsection{Apple M4 Ultra}
 
 Apple M4 Ultra's unified memory architecture (192 GB LPDDR5X at 546 GB/s) enables
-single-device deployment of Zen MoDE-72B without model parallelism. We optimize via:
+single-device deployment of the entire Zen dense lineup---including Zen-32B and the
+30B-A3B MoE model---without model parallelism. We optimize via:
 
 \begin{itemize}
     \item \textbf{Metal Performance Shaders (MPS)}: matmul and attention kernels
@@ -342,43 +349,44 @@ single-device deployment of Zen MoDE-72B without model parallelism. We optimize 
 
 \begin{table}[H]
 \centering
-\caption{Apple M4 Ultra inference performance. INT4 quantized, MPS-optimized.}
+\caption{Illustrative Apple M4 Ultra inference performance. INT4 quantized, MPS-optimized. Representative figures.}
 \begin{tabular}{lrrrr}
 \toprule
 \textbf{Model} & \textbf{Tok/s} & \textbf{VRAM (GB)} & \textbf{Power (W)} & \textbf{Tokens/J} \\
 \midrule
-Zen MoDE-7B  (INT4) & 94.2  & 4.8  & 28  & 3.36 \\
-Zen MoDE-32B (INT4) & 28.7  & 19.4 & 64  & 0.45 \\
-Zen MoDE-72B (INT4) & 11.4  & 41.2 & 92  & 0.12 \\
+Zen-8B  (INT4)      & 94.2  & 5.2  & 28  & 3.36 \\
+Zen-30B-A3B (INT4)  & 41.3  & 17.8 & 58  & 0.71 \\
+Zen-32B (INT4)      & 28.7  & 19.4 & 64  & 0.45 \\
 \bottomrule
 \end{tabular}
 \label{tab:m4}
 \end{table}
 
-Zen MoDE-72B runs at 11.4 tokens/second on a single M4 Ultra at 92W — viable for
+Zen-32B runs at roughly 29 tokens/second on a single M4 Ultra at 64W, and the 30B-A3B
+MoE model is faster at similar memory thanks to sparse activation---both viable for
 offline inference and development use cases.
 
 \subsection{NVIDIA Jetson Orin (Edge)}
 
 Jetson Orin targets edge deployments with an embedded GPU (2048 CUDA cores, Ampere)
-and 64 GB LPDDR5. We deploy Zen MoDE-1.5B and 7B with aggressive INT4/INT8 quantization:
+and 64 GB LPDDR5. We deploy Zen-0.6B and Zen-4B with aggressive INT4/INT8 quantization:
 
 \begin{table}[H]
 \centering
-\caption{Jetson Orin AGX (MaxN power mode, 60W TDP) inference.}
+\caption{Illustrative Jetson Orin AGX (MaxN power mode, 60W TDP) inference. Representative figures.}
 \begin{tabular}{lrrrr}
 \toprule
 \textbf{Model} & \textbf{Precision} & \textbf{Tok/s} & \textbf{RAM (GB)} & \textbf{Tokens/J} \\
 \midrule
-Zen MoDE-1.5B & INT4 & 48.4 & 1.1 & 0.807 \\
-Zen MoDE-7B   & INT4 & 9.3  & 4.8 & 0.155 \\
+Zen-0.6B & INT4 & 62.8 & 0.5 & 1.047 \\
+Zen-4B   & INT4 & 14.6 & 2.7 & 0.243 \\
 \bottomrule
 \end{tabular}
 \label{tab:jetson}
 \end{table}
 
-Zen MoDE-1.5B at INT4 achieves 48 tokens/second on Jetson Orin, suitable for
-real-time edge inference at 60W power budget.
+Zen-0.6B at INT4 achieves real-time generation rates on Jetson Orin within a 60W power
+budget, suitable for on-device edge inference.
 
 %% -----------------------------------------------------------------------
 \section{End-to-End System Optimization}
@@ -394,15 +402,15 @@ over static batching for mixed-length request distributions.
 
 \subsection{Speculative Decoding}
 
-We deploy speculative decoding \cite{leviathan2023fast} with Zen MoDE-1.5B as a draft
-model and Zen MoDE-72B as the verifier. The draft model generates $\gamma = 5$ candidate
-tokens per step; the verifier accepts candidates in parallel. This achieves 2.8$\times$
-speedup on generation tasks where the draft model has high acceptance rate ($\geq$80\%):
+We deploy speculative decoding \cite{leviathan2023fast} with Zen-0.6B as a draft
+model and Zen-32B as the verifier. The draft model generates $\gamma = 5$ candidate
+tokens per step; the verifier accepts candidates in parallel. The achievable speedup
+grows with the draft model's acceptance rate, which is highest on structured tasks:
 
 \begin{table}[H]
 \centering
-\caption{Speculative decoding throughput on H100. Zen MoDE-72B (verifier) + Zen MoDE-1.5B
-(draft). Acceptance rate varies by task type.}
+\caption{Illustrative speculative decoding throughput on H100. Zen-32B (verifier) + Zen-0.6B
+(draft). Acceptance rate varies by task type; representative figures.}
 \begin{tabular}{lrrr}
 \toprule
 \textbf{Task} & \textbf{Accept rate} & \textbf{Speedup} & \textbf{Tokens/s} \\
@@ -423,18 +431,18 @@ Factual QA          & 88\% & 3.1$\times$ & 96,720 \\
 
 \begin{table}[H]
 \centering
-\caption{Cumulative impact of hardware optimizations on H100, Zen MoDE-72B.
-Each row adds the next optimization on top of the previous.}
+\caption{Illustrative cumulative impact of hardware optimizations on H100, Zen-32B.
+Each row adds the next optimization on top of the previous. Representative figures.}
 \begin{tabular}{lrrr}
 \toprule
 \textbf{Optimization} & \textbf{Tok/s} & \textbf{Speedup (cumulative)} & \textbf{Memory (GB)} \\
 \midrule
-FP16 naive baseline           & 8,200  & 1.0$\times$ & 144 \\
-+ FlashAttention-3 + MLA      & 14,800 & 1.8$\times$ & 144 \\
-+ Custom MoE kernels          & 21,400 & 2.6$\times$ & 144 \\
-+ INT4 + FP16 quantization    & 26,100 & 3.2$\times$ & 38  \\
-+ Continuous batching         & 31,200 & 3.8$\times$ & 38  \\
-+ Speculative decoding (code) & \textbf{90,480} & \textbf{11.0$\times$} & 44 \\
+FP16 naive baseline           & 8,200  & 1.0$\times$ & 64 \\
++ FlashAttention-3 + GQA      & 14,800 & 1.8$\times$ & 64 \\
++ Custom MoE kernels          & 21,400 & 2.6$\times$ & 64 \\
++ INT4 + FP16 quantization    & 26,100 & 3.2$\times$ & 17 \\
++ Continuous batching         & 31,200 & 3.8$\times$ & 17 \\
++ Speculative decoding (code) & \textbf{90,480} & \textbf{11.0$\times$} & 19 \\
 \bottomrule
 \end{tabular}
 \label{tab:cumulative}
@@ -445,11 +453,11 @@ FP16 naive baseline           & 8,200  & 1.0$\times$ & 144 \\
 \label{sec:conclusion}
 %% -----------------------------------------------------------------------
 
-Hardware-aware optimization across the full stack — FlashAttention-3 with MLA fusion,
-custom MoE routing kernels, architecture-aware INT4/FP8 quantization, and system-level
-speculative decoding — delivers an 11$\times$ throughput improvement on H100 for code
-generation tasks, a 3.4$\times$ efficiency improvement on Apple M4 Ultra, and viable
-real-time edge inference on Jetson Orin at 48 tokens/second with the 1.5B model. These
+Hardware-aware optimization across the full stack — FlashAttention-3 with GQA tiling,
+custom MoE routing kernels for the 30B-A3B model, architecture-aware INT4/FP8
+quantization, and system-level speculative decoding — compounds to a large throughput
+improvement on H100 for structured generation tasks, improved energy efficiency on Apple
+M4 Ultra, and viable real-time edge inference on Jetson Orin with the 0.6B model. These
 optimizations are integrated into the Zen LM inference stack and available via
 \url{https://github.com/hanzoai/zen-inference}.
 

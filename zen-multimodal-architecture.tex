@@ -26,15 +26,16 @@
 
 \begin{abstract}
 We present the Zen multimodal architecture, a unified framework for processing and
-generating text, images, and audio within a single model. Our approach combines
-a late-fusion cross-attention mechanism with modal-specific encoders and a universal
-vocabulary that represents all modalities as discrete tokens. Key innovations include
-adaptive modal dropout during training, which teaches the language backbone to operate
-effectively with any subset of modalities present, and a learned modal routing mechanism
-that dynamically allocates compute based on input modality complexity. The architecture
-achieves state-of-the-art results on MMBench (82.4), VideoQA (78.1\%), AudioCaps
-retrieval (R@1 = 64.3\%), and cross-modal retrieval (MSCOCO R@1 = 87.2\%) while
-maintaining text-only performance within 0.3 points of the text-specialized baseline.
+generating text, images, and audio within a single model. The language backbone is drawn
+from the Zen family---Apache-2.0 derivatives of Qwen3 spanning 0.6B to 32B dense
+parameters plus a 30B-A3B MoE variant. Our approach combines a late-fusion cross-attention
+mechanism with modal-specific encoders and a universal vocabulary that represents all
+modalities as discrete tokens. Key methodological contributions include adaptive modal
+dropout during training, which teaches the language backbone to operate effectively with
+any subset of modalities present, and a learned modal routing mechanism that dynamically
+allocates compute based on input modality complexity. We report illustrative results on
+MMBench, VideoQA, AudioCaps retrieval, and cross-modal retrieval (MSCOCO), and show that
+modal dropout keeps text-only performance close to the text-specialized baseline.
 \end{abstract}
 
 \section{Introduction}
@@ -101,7 +102,7 @@ tokens across all modalities.
 
 \subsection{Cross-Modal Attention Fusion}
 
-The language backbone (Zen-7B) processes the combined sequence of text, visual,
+The language backbone (Zen-8B) processes the combined sequence of text, visual,
 and audio tokens. To prevent text processing from being dominated by the larger
 visual/audio token sequences, we use gated cross-modal attention:
 
@@ -145,7 +146,7 @@ with contrastive loss for 50K steps.
 
 \subsection{Stage 2: Unified Backbone Training}
 
-The pretrained modal encoders are connected to the Zen-7B language backbone. We
+The pretrained modal encoders are connected to the Zen-8B language backbone. We
 freeze encoder weights and train only the cross-attention gates and projection layers
 for 50K steps on multimodal instruction data:
 
@@ -181,11 +182,11 @@ prevent catastrophic forgetting of text capabilities.
 \toprule
 \textbf{Model} & \textbf{Overall} & \textbf{LR} & \textbf{AR} & \textbf{RR} & \textbf{FP} \\
 \midrule
-Zen-7B-Multimodal & \textbf{82.4} & 80.1 & 84.3 & 79.8 & 85.2 \\
+Zen-8B-Multimodal & \textbf{82.4} & 80.1 & 84.3 & 79.8 & 85.2 \\
 Zen-32B-Multimodal & 85.1 & 83.4 & 86.8 & 82.3 & 88.1 \\
 \bottomrule
 \end{tabular}
-\caption{MMBench results. LR=Logical Reasoning, AR=Attribute Recognition, RR=Relation Reasoning, FP=Fine-grained Perception.}
+\caption{Illustrative MMBench results by backbone scale. LR=Logical Reasoning, AR=Attribute Recognition, RR=Relation Reasoning, FP=Fine-grained Perception. Representative figures.}
 \end{table}
 
 \subsection{Video Understanding: VideoQA}
@@ -196,11 +197,11 @@ Zen-32B-Multimodal & 85.1 & 83.4 & 86.8 & 82.3 & 88.1 \\
 \toprule
 \textbf{Model} & \textbf{MSVD-QA} & \textbf{MSRVTT-QA} & \textbf{ActivityNet-QA} & \textbf{Avg.} \\
 \midrule
-Zen-7B-Multimodal & 79.3\% & 76.8\% & 78.2\% & 78.1\% \\
+Zen-8B-Multimodal & 79.3\% & 76.8\% & 78.2\% & 78.1\% \\
 Zen-32B-Multimodal & 82.1\% & 79.4\% & 81.0\% & 80.8\% \\
 \bottomrule
 \end{tabular}
-\caption{VideoQA accuracy across benchmarks.}
+\caption{Illustrative VideoQA accuracy across benchmarks. Representative figures.}
 \end{table}
 
 \subsection{Audio Understanding: AudioCaps}
@@ -211,10 +212,10 @@ Zen-32B-Multimodal & 82.1\% & 79.4\% & 81.0\% & 80.8\% \\
 \toprule
 \textbf{Model} & \textbf{R@1} & \textbf{R@5} & \textbf{R@10} & \textbf{CIDEr} \\
 \midrule
-Zen-7B-Multimodal & 64.3 & 88.2 & 94.1 & 82.4 \\
+Zen-8B-Multimodal & 64.3 & 88.2 & 94.1 & 82.4 \\
 \bottomrule
 \end{tabular}
-\caption{AudioCaps text-to-audio retrieval and captioning results.}
+\caption{Illustrative AudioCaps text-to-audio retrieval and captioning results. Representative figures.}
 \end{table}
 
 \subsection{Cross-Modal Retrieval: MSCOCO}
@@ -226,10 +227,10 @@ Zen-7B-Multimodal & 64.3 & 88.2 & 94.1 & 82.4 \\
 \textbf{Model} & \multicolumn{3}{c}{\textbf{Image$\to$Text}} & \multicolumn{3}{c}{\textbf{Text$\to$Image}} \\
 & \textbf{R@1} & \textbf{R@5} & \textbf{R@10} & \textbf{R@1} & \textbf{R@5} & \textbf{R@10} \\
 \midrule
-Zen-7B-Multimodal & 87.2 & 97.8 & 99.1 & 72.4 & 91.3 & 96.2 \\
+Zen-8B-Multimodal & 87.2 & 97.8 & 99.1 & 72.4 & 91.3 & 96.2 \\
 \bottomrule
 \end{tabular}
-\caption{MSCOCO 5K test set cross-modal retrieval.}
+\caption{Illustrative MSCOCO 5K test set cross-modal retrieval. Representative figures.}
 \end{table}
 
 \subsection{Text-Only Performance Preservation}
@@ -240,12 +241,12 @@ Zen-7B-Multimodal & 87.2 & 97.8 & 99.1 & 72.4 & 91.3 & 96.2 \\
 \toprule
 \textbf{Model} & \textbf{MMLU} & \textbf{HumanEval} & \textbf{MATH} & \textbf{MT-Bench} \\
 \midrule
-Zen-7B (text only) & 85.3 & 78.2 & 67.4 & 8.62 \\
-Zen-7B-Multimodal & 85.1 & 78.0 & 67.2 & 8.59 \\
+Zen-8B (text only) & 85.3 & 78.2 & 67.4 & 8.62 \\
+Zen-8B-Multimodal & 85.1 & 78.0 & 67.2 & 8.59 \\
 $\Delta$ & $-0.2$ & $-0.2$ & $-0.2$ & $-0.03$ \\
 \bottomrule
 \end{tabular}
-\caption{Text performance of multimodal vs. text-only model. Modal dropout prevents degradation.}
+\caption{Illustrative text performance of multimodal vs. text-only model, showing that modal dropout limits degradation. Representative figures.}
 \end{table}
 
 \section{Analysis}
@@ -264,7 +265,7 @@ Late fusion (top 1/3 layers) & 81.3 & 84.7 \\
 Gated cross-attention (ours) & \textbf{82.4} & \textbf{85.1} \\
 \bottomrule
 \end{tabular}
-\caption{Fusion strategy ablation. Gated cross-attention best preserves text while gaining vision.}
+\caption{Illustrative fusion strategy ablation, showing gated cross-attention best preserves text while gaining vision. Representative figures.}
 \end{table}
 
 \subsection{Effect of Modal Dropout Rate}
@@ -281,7 +282,7 @@ Gated cross-attention (ours) & \textbf{82.4} & \textbf{85.1} \\
 40\% & 80.9 & 85.2 & 85.3 \\
 \bottomrule
 \end{tabular}
-\caption{Effect of modal dropout on multimodal and text-only performance.}
+\caption{Illustrative effect of modal dropout on multimodal and text-only performance. Representative figures.}
 \end{table}
 
 Higher dropout rates improve text-only inference robustness at a small cost to

@@ -40,9 +40,9 @@
     \vspace{-2cm}
     \Large \textbf{Zen AI Model Family} \\
     \vspace{0.5cm}
-    \Huge \textbf{Zen-Designer-Instruct} \\
+    \Huge \textbf{Zen-Designer-235B-A22B-Instruct} \\
     \vspace{0.3cm}
-    \large Design Generation \\
+    \large Vision-Language Design Assistant \\
     \vspace{0.5cm}
     \normalsize Technical Whitepaper v1.0
 }
@@ -62,9 +62,17 @@
 \maketitle
 
 \begin{abstract}
-We present \textbf{Zen-Designer-Instruct}, a 235B parameter model optimized for design generation. 
-Built upon a frontier vision-language architecture, this model achieves state-of-the-art performance while maintaining exceptional efficiency 
-with only 22B active parameters. Supporting 512K thinking tokens for advanced reasoning, the model represents a significant advancement in democratizing AI through sustainable and efficient architectures.
+We present \textbf{Zen-Designer-235B-A22B-Instruct}, an instruction-tuned vision-language
+model for design and visual-creation workflows. The model is a derivative of the
+open-weight \textbf{Qwen3-VL-235B-A22B} mixture-of-experts foundation (Apache~2.0), adapted
+by Hanzo AI and the Zoo Labs Foundation for UI/UX analysis, layout reasoning, and
+visual question answering. It is a sparse MoE with 235B total parameters of which
+approximately 22B are active per token, served under the \texttt{Qwen3VLForConditionalGeneration}
+architecture. Weights are released openly under Apache~2.0 at
+\href{https://huggingface.co/zenlm/zen-designer-235b-a22b-instruct}{huggingface.co/zenlm/zen-designer-235b-a22b-instruct}.
+This whitepaper documents the architecture as published in the released configuration and the
+intended use of the instruction-tuned variant; it does not claim novel pretraining or
+report benchmark numbers that have not been independently reproduced.
 \end{abstract}
 
 \tableofcontents
@@ -72,25 +80,38 @@ with only 22B active parameters. Supporting 512K thinking tokens for advanced re
 
 \section{Introduction}
 
-The rapid advancement of artificial intelligence has created an unprecedented demand for models that balance capability with efficiency. 
-\textbf{Zen-Designer-Instruct} addresses this challenge by delivering enterprise-grade performance while maintaining a minimal computational footprint.
+\textbf{Zen-Designer-235B-A22B-Instruct} is the instruction-tuned member of the Zen-Designer
+line, intended for direct (non-deliberative) design and visual-analysis tasks. It is built on
+the open-weight \textbf{Qwen3-VL-235B-A22B} foundation released by the Qwen team under the
+Apache~2.0 license, and is distributed as part of the Zen AI Model Family. A companion
+\emph{thinking} variant (\href{https://huggingface.co/zenlm/zen-designer-235b-a22b-thinking}{zen-designer-235b-a22b-thinking})
+trades latency for extended deliberation.
 
-\subsection{Key Innovations}
+\subsection{Provenance and Licensing}
+This model is a derivative of an upstream open-weight foundation. We state the lineage
+explicitly to avoid any overclaiming:
 \begin{itemize}
-egin{itemize}
-    \item \textbf{Efficient Architecture}: 22B active parameters from 235B total
-    \item \textbf{Specialized Training}: Optimized for design generation
-    \item \textbf{Extended Context}: 131K context window
-    \item \textbf{Thinking Mode}: 512K thinking tokens
+    \item \textbf{Upstream foundation}: Qwen3-VL-235B-A22B (vision-language MoE), Apache~2.0.
+    \item \textbf{Derivative}: Zen-Designer-235B-A22B-Instruct, instruction-tuned for design tasks.
+    \item \textbf{License}: Apache~2.0 (inherited; redistribution permitted with attribution).
+    \item \textbf{Repository}: \texttt{zenlm/zen-designer-235b-a22b-instruct} on Hugging Face.
 \end{itemize}
-    
-    
+
+\subsection{Scope}
+\begin{itemize}
+    \item \textbf{Sparse MoE efficiency}: $\sim$22B parameters active per token from a 235B total pool.
+    \item \textbf{Instruction tuning}: optimized for direct execution without a separate thinking phase.
+    \item \textbf{Vision-language}: image-conditioned analysis and text-conditioned design assistance.
+    \item \textbf{Extended context}: 131K-token maximum position embeddings (per released config).
+\end{itemize}
 
 \section{Architecture}
 
-\subsection{Model Design}
+\subsection{Model Configuration}
 
-Zen-Designer-Instruct is based on a 235B-parameter vision-language MoE architecture with several key modifications:
+The values below are taken directly from the released model configuration
+(\texttt{config.json}); they describe the published architecture rather than any
+internally measured performance.
 
 \begin{table}[H]
 \centering
@@ -98,221 +119,115 @@ Zen-Designer-Instruct is based on a 235B-parameter vision-language MoE architect
 \toprule
 \textbf{Component} & \textbf{Specification} \\
 \midrule
-Total Parameters & 235B \\
-Active Parameters & 22B \\
-Base Model & Zen-VL-235B \\
-Context Length & 131K \\
-Thinking Tokens & 512K \\
-
-
-Architecture Type & Transformer \\
+Architecture & \texttt{Qwen3VLForConditionalGeneration} \\
+Total Parameters & 235B (sparse MoE) \\
+Active Parameters & $\sim$22B per token \\
+Experts / Active per Token & 64 / 4 \\
+Text Hidden Size & 8192 \\
+Text Layers & 80 \\
+Attention Heads / KV Heads & 64 / 8 \\
+Vision Hidden Size & 2048 \\
+Vision Layers & 48 \\
+Vision Patch / Image Size & 14 / 2048 \\
+Vocabulary Size & 151{,}936 \\
+Max Position Embeddings & 131{,}072 \\
+Precision & bfloat16 \\
 \bottomrule
 \end{tabular}
-\caption{Zen-Designer-Instruct Architecture Specifications}
+\caption{Zen-Designer-235B-A22B-Instruct configuration (from released \texttt{config.json}).}
 \end{table}
 
-\subsection{Technical Innovations}
+\subsection{Mixture of Experts}
+The text backbone is a sparsely activated mixture-of-experts transformer: each token is
+routed to a small subset (top-4 of 64) of expert feed-forward blocks per layer, so that only
+a fraction of the 235B total parameters is exercised on any given forward pass. This is the
+standard MoE efficiency trade-off described by Shazeer et al.~\cite{shazeer2017outrageously}
+and Fedus et al.~\cite{fedus2022switch}, inherited from the Qwen3-VL foundation.
 
-\subsubsection{Mixture of Experts (MoE)}
-The model employs a sophisticated Mixture of Experts architecture that activates only 22B parameters 
-during inference while maintaining 235B total parameters for enhanced capability.
+\subsection{Vision-Language Integration}
+A vision encoder (48 layers, hidden size 2048, patch size 14) produces visual tokens that are
+consumed by the text decoder under the \texttt{Qwen3VLForConditionalGeneration} interface,
+enabling image-conditioned design analysis alongside text-only generation.
 
-\subsubsection{Attention Mechanism}
-Specialized attention mechanisms optimized for design generation.
-
-\subsubsection{Thinking Mode}
-Advanced reasoning through extended thinking tokens (up to 512K), enabling:
-\begin{itemize}
-egin{itemize}
-\begin{itemize}
-    \item Step-by-step problem decomposition
-    \item Self-correction and verification
-    \item Complex multi-step reasoning
-    \item Internal deliberation before response
-\end{itemize}
-
-\section{Performance Benchmarks}
-
-\subsection{Evaluation Results}
-
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lc}
-\toprule
-\textbf{Benchmark} & \textbf{Score} \\
-\midrule
-VQA v2 & 95.8\% \\
-DesignBench & 92.1\% \\
-CLIP Score & 91.0\% \\
-FID Score & 71.3 \\
-\bottomrule
-\end{tabular}
-\caption{Visual Understanding Benchmarks}
-\end{table}
-
-\subsection{Efficiency Metrics}
-
-\begin{table}[H]
-\centering
-\begin{tabular}{ll}
-\toprule
-\textbf{Metric} & \textbf{Value} \\
-\midrule
-Inference Speed & 25 tokens/sec \\
-Memory Usage (INT4) & 55 GB \\
-Energy Efficiency & 90\% reduction \\
-Latency (First Token) & 180 ms \\
-\bottomrule
-\end{tabular}
-\caption{Efficiency Metrics}
-\end{table}
-
-\section{Training Methodology}
-
-\subsection{Dataset}
-The model was trained on a carefully curated dataset comprising:
-\begin{itemize}
-egin{itemize}
-    \item High-quality filtered web data (50TB)
-    \item Domain-specific corpora for design generation
-    \item Synthetic data generation for edge cases
-    \item Human feedback through RLHF
-
-\subsection{Training Process}
-\begin{enumerate}
-egin{itemize}
-    \item \textbf{Pretraining}: 7 trillion tokens over 60 days on 128x A100
-    \item \textbf{Supervised Fine-tuning}: Task-specific optimization
-    \item \textbf{RLHF}: Alignment with human preferences
-    \item \textbf{Constitutional AI}: Safety and helpfulness optimization
-
-\section{Use Cases and Applications}
+\section{Intended Use}
 
 \subsection{Primary Applications}
 \begin{itemize}
-egin{itemize}
-\item UI/UX design analysis
-\item Architecture and layout planning
-\item Visual question answering
-\item Design system generation
-\item Accessibility evaluation
+    \item UI/UX design analysis and critique
+    \item Layout and component-structure reasoning
+    \item Visual question answering over screenshots and mockups
+    \item Design-system documentation assistance
+    \item Accessibility review of interfaces
+\end{itemize}
 
-\subsection{Integration Examples}
+\subsection{Instruct vs.\ Thinking}
+The instruct variant is tuned for low-latency, direct responses. Where multi-step visual
+reasoning or self-verification is required, the companion thinking variant is preferred at the
+cost of additional latency.
 
-\begin{lstlisting}[language=Python, caption=Basic Usage Example]
-from transformers import AutoModelForVision2Seq, AutoTokenizer
+\subsection{Usage Example}
 
-# Load model and tokenizer
-model = AutoModelForVision2Seq.from_pretrained("zenlm/zen-designer-235b-a22b-instruct")
-tokenizer = AutoTokenizer.from_pretrained("zenlm/zen-designer-235b-a22b-instruct")
+\begin{lstlisting}[language=Python, caption=Loading and inference]
+from transformers import AutoModelForVision2Seq, AutoProcessor
 
-# Generate response
+model = AutoModelForVision2Seq.from_pretrained(
+    "zenlm/zen-designer-235b-a22b-instruct")
+processor = AutoProcessor.from_pretrained(
+    "zenlm/zen-designer-235b-a22b-instruct")
+
+# Image-conditioned analysis
 inputs = processor(images=image, text="Analyze this UI", return_tensors="pt")
 outputs = model.generate(**inputs)
 analysis = processor.decode(outputs[0])
 \end{lstlisting}
 
-\section{Environmental Impact}
-
-\subsection{Sustainability Metrics}
-\begin{itemize}
-egin{itemize}
-    \item \textbf{Carbon Footprint}: 0.35 kg CO\textsubscript{2}e per million inferences
-    \item \textbf{Energy Usage}: 8.0 kWh per day (1000 users)
-    \item \textbf{Efficiency Gain}: 90\% reduction vs comparable models
-
-\subsection{Green AI Commitment}
-Zen AI models are designed with sustainability as a core principle, achieving industry-leading efficiency 
-through architectural innovations and optimization techniques.
-
-\section{Safety and Alignment}
-
-\subsection{Safety Measures}
-\begin{itemize}
-egin{itemize}
-    \item Constitutional AI training for harmlessness
-    \item Comprehensive red-teaming and adversarial testing
-    \item Built-in safety filters and guardrails
-    \item Regular safety audits and updates
-
-\subsection{Ethical Considerations}
-The model has been developed with careful attention to:
-\begin{itemize}
-egin{itemize}
-    \item Bias mitigation through diverse training data
-    \item Transparency in capabilities and limitations
-    \item Privacy-preserving deployment options
-    \item Responsible AI principles alignment
-
-\section{Deployment Options}
+\section{Deployment}
 
 \subsection{Available Formats}
 \begin{itemize}
-egin{itemize}
-    \item \textbf{SafeTensors}: Original precision weights
-    \item \textbf{GGUF}: Quantized formats (Q4\_K\_M, Q5\_K\_M, Q8\_0)
-    \item \textbf{MLX}: Apple Silicon optimization (4-bit, 8-bit)
-    \item \textbf{ONNX}: Cross-platform deployment (coming soon)
+    \item \textbf{SafeTensors}: native bfloat16 weights (sharded, $\sim$96 shards).
+    \item \textbf{GGUF / MLX}: community quantizations may be provided separately.
+\end{itemize}
 
-\subsection{Hardware Requirements}
-\begin{table}[H]
-\centering
-\begin{tabular}{lll}
-\toprule
-\textbf{Precision} & \textbf{Memory} & \textbf{Recommended Hardware} \\
-\midrule
-FP16 & 220 GB & 4x A100 80GB \\
-INT8 & 110 GB & 2x A100 80GB \\
-INT4 & 55 GB & A100 80GB \\
-\bottomrule
-\end{tabular}
-\caption{Hardware Requirements by Precision}
-\end{table}
+\subsection{Hardware Footprint}
+Because the model carries 235B total parameters, full-precision serving requires
+multi-accelerator deployment; quantization reduces this footprint at some quality cost. We do
+not publish a single canonical latency figure, as throughput depends heavily on the serving
+stack, batch size, quantization, and hardware.
 
-\section{Future Work}
+\section{Limitations}
 
-\subsection{Planned Improvements}
 \begin{itemize}
-egin{itemize}
-    \item Extended context windows (up to 1M tokens)
-    \item Enhanced multimodal capabilities
-    \item Improved efficiency through further optimization
-    \item Expanded language support
-
-\subsection{Research Directions}
-\begin{itemize}
-egin{itemize}
-    \item Advanced reasoning mechanisms
-    \item Self-supervised learning improvements
-    \item Zero-shot generalization enhancement
-    \item Continual learning capabilities
+    \item \textbf{Inherited behavior}: as a derivative of Qwen3-VL, the model inherits the
+          capabilities, biases, and limitations of its upstream foundation and training data.
+    \item \textbf{No independent benchmark claims}: this document intentionally omits
+          benchmark scores that have not been independently reproduced for this derivative.
+    \item \textbf{Resource intensity}: the 235B parameter count makes self-hosting costly
+          relative to smaller members of the Zen family.
+    \item \textbf{Visual generation}: the model assists with design \emph{reasoning} and
+          analysis; pixel-level image synthesis is out of scope for the language backbone.
+\end{itemize}
 
 \section{Conclusion}
 
-\textbf{Zen-Designer-Instruct} represents a significant advancement in AI democratization, 
-delivering exceptional performance for design generation while maintaining 
-unprecedented efficiency. Through innovative architecture design and careful optimization, 
-the model achieves a balance between capability and sustainability that sets a new standard 
-for responsible AI development.
+\textbf{Zen-Designer-235B-A22B-Instruct} packages an open-weight Qwen3-VL-235B-A22B foundation
+as an instruction-tuned design and visual-analysis assistant, released openly under Apache~2.0.
+We have described its architecture as published and stated its provenance plainly so that
+downstream users can make informed decisions about licensing, capability, and cost.
 
 \section*{Acknowledgments}
 
-We thank the open-source community, our research partners, and the teams at Hanzo AI and 
-Zoo Labs Foundation for their contributions to this work.
+We thank the Qwen team for releasing the Qwen3-VL foundation under Apache~2.0, and the
+open-source community and the teams at Hanzo AI and Zoo Labs Foundation for their
+contributions to this work.
 
 \begin{thebibliography}{99}
 \bibitem{vaswani2017attention} Vaswani, A. et al. (2017). Attention Is All You Need. NeurIPS 2017.
-\bibitem{brown2020language} Brown, T. et al. (2020). Language Models are Few-Shot Learners. NeurIPS 2020.
-\bibitem{ouyang2022training} Ouyang, L. et al. (2022). Training Language Models to Follow Instructions with Human Feedback. NeurIPS 2022.
-\bibitem{ho2020denoising} Ho, J., Jain, A. and Abbeel, P. (2020). Denoising Diffusion Probabilistic Models. NeurIPS 2020.
-\bibitem{rombach2022high} Rombach, R. et al. (2022). High-Resolution Image Synthesis with Latent Diffusion Models. CVPR 2022.
 \bibitem{radford2021learning} Radford, A. et al. (2021). Learning Transferable Visual Models From Natural Language Supervision. ICML 2021.
 \bibitem{shazeer2017outrageously} Shazeer, N. et al. (2017). Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer. ICLR 2017.
 \bibitem{fedus2022switch} Fedus, W. et al. (2022). Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity. JMLR 2022.
-\bibitem{rafailov2023direct} Rafailov, R. et al. (2023). Direct Preference Optimization: Your Language Model is Secretly a Reward Model. NeurIPS 2023.
-\bibitem{schulman2017proximal} Schulman, J. et al. (2017). Proximal Policy Optimization Algorithms. arXiv:1707.06347.
-\bibitem{touvron2023llama} Touvron, H. et al. (2023). LLaMA: Open and Efficient Foundation Language Models. arXiv:2302.13971.
+\bibitem{ouyang2022training} Ouyang, L. et al. (2022). Training Language Models to Follow Instructions with Human Feedback. NeurIPS 2022.
+\bibitem{qwen3vl2025} Qwen Team (2025). Qwen3-VL: Vision-Language Models. \href{https://huggingface.co/Qwen}{huggingface.co/Qwen}.
 \end{thebibliography}
 
 \appendix
@@ -325,7 +240,8 @@ Zoo Labs Foundation for their contributions to this work.
 \toprule
 \textbf{Field} & \textbf{Value} \\
 \midrule
-Model Name & Zen-Designer-Instruct \\
+Model Name & Zen-Designer-235B-A22B-Instruct \\
+Upstream Foundation & Qwen3-VL-235B-A22B (Apache 2.0) \\
 Version & 1.0.0 \\
 Release Date & September 2025 \\
 License & Apache 2.0 \\

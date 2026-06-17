@@ -206,7 +206,6 @@ Zen models use **Zen MoDE (Mixture of Distilled Experts)** architecture, emphasi
 |----------|--------|--------|
 | **Foundation Papers** | 7 | Published |
 | **Core Models** | 8 | Published |
-| **Zen4 Generation** | 6 | Published |
 | **Code Models** | 6 | Published |
 | **Zen3 Specialized** | 5 | Published |
 | **Vision & Image** | 5 | Published |
@@ -218,7 +217,7 @@ Zen models use **Zen MoDE (Mixture of Distilled Experts)** architecture, emphasi
 | **Research** | 12 | Published |
 | **Protocols & Standards** | 3 | Published |
 | **Domain Applications** | 5 | Published |
-| **Total** | **80 papers** | All documented |
+| **Total** | **~65 papers** | All documented |
 
 ---
 
@@ -285,8 +284,7 @@ Each paper includes:
 - **March 2025**: Zen3 family (Nano, Omni, VL, Guard, Embedding), Zen-Code, Zen-Dub, Zen-Video-I2V
 - **April 2025**: Zen-Live, Zen-Guard-Gen/Stream, Context Extension, Fine-tuning, Architecture papers
 - **May 2025**: Domain papers (Medical, Financial, Legal, Privacy), Reward Modeling, Distillation
-- **June 2025**: Protocols (ASO/DSO), Zen4 generation, Benchmark Suite, Multilingual
-- **July–August 2025**: Zen4 family (Pro, Max, Ultra, Mini, Thinking), Zen4-Coder family
+- **June 2025**: Protocols (ASO/DSO), Benchmark Suite, Multilingual
 - **October 2025**: Zen-Reranker (DSO/BitDelta, native 7680-dim)
 
 ---

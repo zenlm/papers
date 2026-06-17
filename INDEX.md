@@ -38,7 +38,6 @@ Auto-generated catalogue of research papers.
 | `zen-legal-ai` | ✓ | `zen-legal-ai.tex` |
 | `zen-live_whitepaper` | ✓ | `zen-live_whitepaper.tex` |
 | `zen-mathematical-reasoning` | ✓ | `zen-mathematical-reasoning.tex` |
-| `zen-max_whitepaper` | ✓ | `zen-max_whitepaper.tex` |
 | `zen-medical` | ✓ | `zen-medical.tex` |
 | `zen-multilingual` | ✓ | `zen-multilingual.tex` |
 | `zen-multimodal-architecture` | ✓ | `zen-multimodal-architecture.tex` |
@@ -46,7 +45,6 @@ Auto-generated catalogue of research papers.
 | `zen-privacy-federated` | ✓ | `zen-privacy-federated.tex` |
 | `zen-pro_whitepaper` | ✓ | `zen-pro_whitepaper.tex` |
 | `zen-quantization` | ✓ | `zen-quantization.tex` |
-| `zen-reasoning` | ✓ | `zen-reasoning.tex` |
 | `zen-reranker` | ✓ | `zen-reranker.tex` |
 | `zen-reward-modeling` | ✓ | `zen-reward-modeling.tex` |
 | `zen-safety-evaluation` | ✓ | `zen-safety-evaluation.tex` |
@@ -64,15 +62,6 @@ Auto-generated catalogue of research papers.
 | `zen3-nano_whitepaper` | ✓ | `zen3-nano_whitepaper.tex` |
 | `zen3-omni_whitepaper` | ✓ | `zen3-omni_whitepaper.tex` |
 | `zen3-vl_whitepaper` | ✓ | `zen3-vl_whitepaper.tex` |
-| `zen4_whitepaper` | ✓ | `zen4_whitepaper.tex` |
-| `zen4-coder_whitepaper` | ✓ | `zen4-coder_whitepaper.tex` |
-| `zen4-coder-flash_whitepaper` | ✓ | `zen4-coder-flash_whitepaper.tex` |
-| `zen4-coder-pro_whitepaper` | ✓ | `zen4-coder-pro_whitepaper.tex` |
-| `zen4-max_whitepaper` | ✓ | `zen4-max_whitepaper.tex` |
-| `zen4-mini_whitepaper` | ✓ | `zen4-mini_whitepaper.tex` |
-| `zen4-pro_whitepaper` | ✓ | `zen4-pro_whitepaper.tex` |
-| `zen4-thinking_whitepaper` | ✓ | `zen4-thinking_whitepaper.tex` |
-| `zen4-ultra_whitepaper` | ✓ | `zen4-ultra_whitepaper.tex` |
 | `zen5_whitepaper` | (pending) | `zen5_whitepaper.tex` |
 
 **Total**: 70 papers, 151 PDFs compiled

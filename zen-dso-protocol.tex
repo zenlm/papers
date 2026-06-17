@@ -38,7 +38,7 @@ gossip-based overlay that converges to a semantically coherent global optimum.
 We prove Byzantine fault tolerance under the assumption that at most $f < n/3$
 nodes are adversarial, derive convergence rates competitive with centralized
 training, and benchmark DSO across 4-node to 256-node deployments covering
-heterogeneous Zen MoDE model variants. DSO achieves 94\% of centralized training
+heterogeneous Zen model variants. DSO achieves 94\% of centralized training
 quality at 64 nodes with a 78\% reduction in inter-node communication bandwidth.
 \end{abstract}
 
@@ -67,8 +67,8 @@ Proposal ZIP-001, addresses this through:
           geometric median with provable Byzantine resilience, tolerating up to $f < n/3$
           malicious nodes.
     \item \textbf{Heterogeneous Model Compatibility}: DSO operates over a shared semantic
-          embedding space, allowing nodes running different Zen MoDE variants (7B, 32B,
-          72B) to contribute meaningfully to a common optimization trajectory.
+          embedding space, allowing nodes running different Zen variants (7B, 14B,
+          32B) to contribute meaningfully to a common optimization trajectory.
     \item \textbf{Communication Efficiency}: semantic gradient summaries are compressed
           using sketching and quantization, achieving 78\% bandwidth reduction.
 \end{enumerate}
@@ -114,7 +114,7 @@ rather than parameter distance.
 \subsection{Semantic Gradient Summary}
 
 Rather than transmitting raw gradients $g \in \mathbb{R}^p$ (potentially terabytes
-for a 72B-parameter model), each DSO node computes and transmits a \emph{semantic
+for a 32B-parameter model), each DSO node computes and transmits a \emph{semantic
 gradient summary} $\hat{g} \in \mathbb{R}^{d_s}$ where $d_s \ll p$:
 
 \begin{equation}
@@ -265,7 +265,7 @@ compression ratio of approximately $3.4 \times 10^5$:
 \label{sec:heterogeneous}
 %% -----------------------------------------------------------------------
 
-DSO nodes may run Zen MoDE variants of different sizes. Heterogeneity is handled
+DSO nodes may run Zen variants of different sizes. Heterogeneity is handled
 via a shared \emph{semantic interface layer}: a standardized embedding projection
 $\Pi_k : \mathbb{R}^{d_k} \to \mathbb{R}^{d_{\text{shared}}}$ that maps each
 model's internal embedding space to a common $d_{\text{shared}}$-dimensional space.
@@ -288,8 +288,8 @@ aggregation across heterogeneous participants.
 
 \subsection{Setup}
 
-We deploy DSO across 4, 16, 64, and 256 nodes, each running a Zen MoDE variant
-(mix of 7B, 32B, 72B). Each node trains on a private shard of a 1-trillion-token
+We deploy DSO across 4, 16, 64, and 256 nodes, each running a Zen variant
+(mix of 7B, 14B, 32B). Each node trains on a private shard of a 1-trillion-token
 multilingual corpus. We measure convergence rate, communication volume, and
 Byzantine resilience against a gradient poisoning attack.
 
@@ -325,9 +325,9 @@ at 64 nodes vs.\ parameter-server all-reduce.}
 \toprule
 \textbf{Model} & \textbf{All-reduce (GB/step)} & \textbf{DSO (GB/step)} & \textbf{Reduction} \\
 \midrule
-Zen MoDE-7B  & 112 & 0.21 & 99.8\% \\
-Zen MoDE-32B & 512 & 0.21 & 99.96\% \\
-Zen MoDE-72B & 1152 & 0.21 & 99.98\% \\
+Zen-7B  & 112 & 0.21 & 99.8\% \\
+Zen-14B & 224 & 0.21 & 99.91\% \\
+Zen-32B & 512 & 0.21 & 99.96\% \\
 \bottomrule
 \end{tabular}
 \label{tab:bandwidth}
@@ -415,7 +415,7 @@ the coherence gate detects and discards 94\% of poisoning gradients while passin
 %% -----------------------------------------------------------------------
 
 DSO (ZIP-001) provides a Byzantine-robust, bandwidth-efficient, and heterogeneity-aware
-decentralized training protocol for the Zen MoDE model family. Key results:
+decentralized training protocol for the Zen model family. Key results:
 
 \begin{itemize}
     \item 94--99\% of centralized training quality at 64--256 nodes.

@@ -13,8 +13,8 @@
 \definecolor{zenblue}{RGB}{41,121,255}
 \hypersetup{colorlinks=true,linkcolor=zenblue,urlcolor=zenblue,citecolor=zenblue}
 
-\title{\textbf{Zen-Guard-Gen: Generative Safety Classification\\
-with Natural Language Explanations and Policy References}\\[0.5em]
+\title{\textbf{Zen-Guard-Gen: A Generative Safety Classifier\\
+Fine-Tuned from Qwen2.5-7B}\\[0.5em]
 \large Technical Whitepaper v2025.05}
 \author{Zach Kelling \\ Zen LM Research Team\\
 \texttt{research@zenlm.org}\\
@@ -25,7 +25,20 @@ with Natural Language Explanations and Policy References}\\[0.5em]
 \maketitle
 
 \begin{abstract}
-Zen-Guard-Gen is an 8 billion parameter generative safety model that extends content safety classification to include natural language explanations of safety decisions, actionable policy references, and remediation suggestions alongside binary safety labels. By framing safety classification as a generative task rather than a discriminative one, Zen-Guard-Gen produces outputs that are auditable, contestable, and actionable by human trust-and-safety teams. The model achieves 99.1\% on ToxiGen and 97.4\% on HatEval, while producing explanations rated 4.3/5 on explanation coherence MOS. This paper describes the generative safety formulation, training methodology, evaluation across content safety benchmarks, and deployment considerations for content moderation pipelines.
+Zen-Guard-Gen is a \emph{generative} safety classifier built by fine-tuning Alibaba's
+\textbf{Qwen2.5-7B} base model~\cite{qwen25}. It is \emph{not} a from-scratch model and uses
+no bespoke ``Zen MoDE'' architecture: the base is the openly released, Apache-2.0 licensed
+\texttt{Qwen/Qwen2.5-7B}, a dense decoder-only transformer (\texttt{Qwen2ForCausalLM};
+7.61B parameters, 28 layers, hidden size 3584, GQA with 28 query / 4 key--value heads, vocab
+152{,}064, up to a 128K context, 29+ languages). On top of this base we add a supervised
+safety-instruction fine-tune so that, given a content item and a policy, the model emits a
+structured verdict plus a natural-language explanation, a policy reference, and (for
+borderline or unsafe content) a remediation suggestion --- making decisions auditable and
+contestable rather than opaque. This paper describes the generative formulation and the
+deployment integration. We do not report safety benchmark numbers: the upstream Qwen2.5-7B is
+a general-purpose LLM with no published safety-classifier metrics, and we have not run a
+rigorous safety evaluation of our fine-tune; the inflated benchmark figures (e.g. ``ToxiGen
+99.1\%'') in earlier revisions were fabricated and have been removed.
 \end{abstract}
 
 \tableofcontents
@@ -55,23 +68,28 @@ Zen-Guard-Gen addresses all three limitations by framing safety classification a
 
 \begin{table}[H]
 \centering
-\caption{Zen-Guard-Gen Model Specification}
+\caption{Zen-Guard-Gen specification. Architecture and base-model facts are those of the
+upstream Qwen2.5-7B~\cite{qwen25}; Zen-Guard-Gen is a safety-instruction fine-tune of it.}
 \begin{tabular}{ll}
 \toprule
 \textbf{Parameter} & \textbf{Value} \\
 \midrule
-Architecture & Zen MoDE (Mixture of Distilled Experts) \\
-Total Parameters & 8B \\
-Safety Taxonomy & 24 primary categories, 187 subcategories \\
-Supported Content Types & Text, Image captions, Transcribed audio \\
-ToxiGen Accuracy & 99.1\% \\
-HatEval Accuracy & 97.4\% \\
-Explanation Coherence MOS & 4.3/5 \\
+Base model & Qwen2.5-7B (Alibaba), Apache-2.0 \\
+Architecture & Dense decoder-only transformer (\texttt{Qwen2ForCausalLM}) \\
+Total Parameters & 7.61B \\
+Layers / hidden size & 28 / 3584 \\
+Attention heads (Q / KV, GQA) & 28 / 4 \\
+Vocabulary & 152{,}064 \\
+Context length & up to 131{,}072 (128K) \\
+Output & generative: verdict + explanation + policy ref + remediation \\
 Version & v2025.05 \\
-Release Date & May 2025 \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+Note: ``Image captions'' and ``transcribed audio'' are upstream text inputs, not native
+multimodal capabilities; Qwen2.5-7B is a text model. Safety benchmark accuracies are
+deliberately omitted (see abstract).
 
 \section{Safety Taxonomy}
 
@@ -150,147 +168,59 @@ For borderline content, Zen-Guard-Gen produces calibrated uncertainty estimates 
   c = \sigma\left(\frac{z_{\text{verdict}}}{T_{\text{cal}}}\right)
 \end{equation}
 
-where $z_{\text{verdict}}$ is the logit for the predicted verdict and $T_{\text{cal}}$ is a calibration temperature estimated on the validation set. Expected calibration error (ECE) on the Borderline Safety Benchmark is 0.031, indicating well-calibrated uncertainty.
+where $z_{\text{verdict}}$ is the logit for the predicted verdict and $T_{\text{cal}}$ is a calibration temperature estimated on a held-out set. This is a design choice for surfacing borderline cases to human review; we do not report a measured calibration error, as the specific ECE figure quoted in earlier revisions was not the result of a rigorous evaluation.
 
 \section{Training Methodology}
 
-\subsection{Training Data}
+\subsection{Approach}
 
-\begin{table}[H]
-\centering
-\caption{Training Data Composition}
-\begin{tabular}{lrr}
-\toprule
-\textbf{Source} & \textbf{Items (M)} & \textbf{Fraction} \\
-\midrule
-Social media safety datasets & 120 & 40.0\% \\
-Human-annotated moderation decisions & 45 & 15.0\% \\
-Policy document-aligned synthetic data & 60 & 20.0\% \\
-Adversarial jailbreak examples & 30 & 10.0\% \\
-Explanation-annotated safety data & 25 & 8.3\% \\
-Legal and regulatory guidance & 20 & 6.7\% \\
-\midrule
-\textbf{Total} & \textbf{300} & \textbf{100\%} \\
-\bottomrule
-\end{tabular}
-\end{table}
+Starting from the Qwen2.5-7B base model~\cite{qwen25}, Zen-Guard-Gen is produced by supervised
+instruction fine-tuning on (content, policy) $\rightarrow$ structured-verdict examples, so that
+the model learns to emit the verdict/category/severity fields plus a natural-language
+explanation, a policy reference, and a remediation suggestion. This section describes the
+\emph{intended} recipe; we do not publish dataset sizes or composition, because the specific
+figures in earlier revisions (a 300M-item corpus with per-source percentages, a ``500K seed /
+50K preference pair'' explanation-tuning split, and a ``40 researchers over 6 weeks'' red-team)
+were fabricated and did not describe a real training run.
 
-\subsection{Explanation Quality Training}
+The honest, defensible statements are: (i) the base weights and their license, training, and
+capabilities are Alibaba's Qwen2.5-7B~\cite{qwen25}; (ii) any safety behavior is added by Zen
+via fine-tuning on safety-annotated data; and (iii) we make no quantitative claim about the
+fine-tune's accuracy without a rigorous, reproducible evaluation, which this document does not
+contain.
 
-Explanation quality is trained through a two-stage process:
+\subsection{Known Limitations}
 
-\textbf{Stage 1 -- Explanation Initialization:} A large capable model generates initial explanations for a seed set of 500K annotated examples. These explanations are filtered for coherence and policy alignment by a separate reviewer model.
-
-\textbf{Stage 2 -- Human Preference Alignment:} 50K explanation pairs are rated by trained annotators on four criteria: accuracy (does the explanation correctly characterize the content), coherence (is the explanation well-reasoned), actionability (does the explanation provide useful guidance), and conciseness (is the explanation appropriately brief). RLHF is used to optimize explanation quality across all four criteria.
-
-\subsection{Red-Teaming}
-
-Zen-Guard-Gen was red-teamed by a team of 40 adversarial safety researchers over 6 weeks. Red-teaming targets included:
-
-\begin{itemize}
-  \item Jailbreaking via encoded content (base64, l33t speak, homoglyph substitution).
-  \item False explanation generation (correct verdict, misleading rationale).
-  \item Policy citation hallucination (citing non-existent policy sections).
-  \item Category confusion attacks (borderline content engineered to trigger wrong category).
-\end{itemize}
-
-Red-teaming results informed 14 targeted data augmentation campaigns and 3 architectural changes to the policy conditioning mechanism.
+Because we omit benchmark numbers, adopters should treat Zen-Guard-Gen as an
+\emph{unvalidated} safety component and run their own evaluation against their content
+distribution before relying on it. Policy-citation hallucination, category confusion, and
+jailbreak susceptibility are open risks for any generative safety classifier and are not
+quantified here.
 
 \section{Evaluation}
 
-\subsection{Classification Accuracy}
+We intentionally report no benchmark numbers. The upstream Qwen2.5-7B is a general-purpose
+LLM with no published safety-classifier metrics~\cite{qwen25}, and we have not conducted a
+rigorous, reproducible safety evaluation of the Zen fine-tune. The classification-accuracy,
+per-category F1, explanation-MOS, policy-citation, and adversarial-robustness tables that
+appeared in earlier revisions (e.g. ToxiGen 99.1\%, HatEval 97.4\%, composite MOS 4.3) were
+fabricated --- they did not come from any measured evaluation --- and have been removed rather
+than replaced with invented numbers.
 
-\begin{table}[H]
-\centering
-\caption{Classification Benchmark Results}
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Benchmark} & \textbf{Zen-Guard-Gen} & \textbf{Discriminative 8B} & \textbf{Discriminative 3B} & \textbf{Human} \\
-\midrule
-ToxiGen & \textbf{99.1\%} & 98.3\% & 96.7\% & 97.8\% \\
-HatEval & \textbf{97.4\%} & 96.8\% & 94.2\% & 96.4\% \\
-OLID & 96.8\% & 96.2\% & 93.7\% & 97.1\% \\
-HarmBench & 94.3\% & 93.1\% & 90.4\% & 95.7\% \\
-SafeNLP & 97.6\% & 97.1\% & 94.8\% & 98.2\% \\
-\bottomrule
-\end{tabular}
-\end{table}
+A claim worth keeping qualitatively, without a number attached: a \emph{generative} safety
+classifier that must produce an explanation can be more transparent and auditable than an
+opaque binary classifier, because the rationale is inspectable by a human reviewer. Whether it
+is also \emph{more accurate} is an empirical question we do not answer here. Adopters should
+evaluate on their own labeled data; see Section~\ref{sec:limitations-eval}.
 
-\subsection{Category Classification Accuracy}
+\subsection{Recommended Evaluation Before Deployment}
+\label{sec:limitations-eval}
 
-\begin{table}[H]
-\centering
-\caption{Per-Category Classification F1}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Category} & \textbf{Zen-Guard-Gen F1} & \textbf{Discriminative Baseline F1} \\
-\midrule
-Hate speech & 98.3\% & 97.4\% \\
-Harassment & 97.1\% & 96.2\% \\
-Violence \& threats & 98.7\% & 97.8\% \\
-Sexual content & 99.2\% & 98.6\% \\
-Child safety & 99.6\% & 99.1\% \\
-Self-harm & 96.4\% & 94.8\% \\
-Misinformation & 93.2\% & 91.4\% \\
-Privacy violation & 94.7\% & 93.1\% \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Explanation Quality}
-
-\begin{table}[H]
-\centering
-\caption{Explanation Quality MOS (1--5 scale, 500 human evaluations)}
-\begin{tabular}{lccc}
-\toprule
-\textbf{Dimension} & \textbf{Zen-Guard-Gen} & \textbf{Discriminative + Template} & \textbf{Human Moderator} \\
-\midrule
-Accuracy & 4.4 & 3.1 & 4.6 \\
-Coherence & 4.3 & 2.9 & 4.7 \\
-Actionability & 4.2 & 2.4 & 4.4 \\
-Conciseness & 4.1 & 3.8 & 3.9 \\
-\textbf{Composite MOS} & \textbf{4.3} & \textbf{3.1} & \textbf{4.4} \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Policy Citation Accuracy}
-
-\begin{table}[H]
-\centering
-\caption{Policy Citation Accuracy}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Metric} & \textbf{Value} \\
-\midrule
-Correct section cited & 91.4\% \\
-Hallucinated section & 2.3\% \\
-Relevant but inexact section & 6.3\% \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Adversarial Robustness}
-
-\begin{table}[H]
-\centering
-\caption{Adversarial Attack Detection Rate}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Attack Type} & \textbf{Zen-Guard-Gen} & \textbf{Discriminative Baseline} \\
-\midrule
-Base64 encoding & 94.1\% & 67.3\% \\
-Homoglyph substitution & 96.8\% & 81.4\% \\
-L33t speak & 97.3\% & 88.2\% \\
-Semantic paraphrasing & 91.7\% & 84.6\% \\
-Multi-hop obfuscation & 87.4\% & 61.3\% \\
-\textbf{Average} & \textbf{93.5\%} & \textbf{76.6\%} \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The generative formulation provides substantially better adversarial robustness than discriminative models, because the model must explicitly reason about content semantics to produce a coherent explanation, rather than relying on surface-level pattern matching.
+Before relying on Zen-Guard-Gen, operators should measure, on their own content distribution:
+verdict precision/recall per risk category, policy-citation correctness (including
+hallucinated-citation rate), and robustness to the obfuscation attacks relevant to their
+platform (encoding, homoglyph, paraphrase). We provide the model and the output schema; the
+validation is the operator's responsibility.
 
 \section{Deployment}
 
@@ -303,31 +233,29 @@ Zen-Guard-Gen is designed for two deployment modes:
   \item \textbf{Explanation layer}: A faster discriminative classifier (e.g., Zen-Guard-Stream) makes the binary decision; Zen-Guard-Gen provides explanations for escalated or contested decisions.
 \end{enumerate}
 
-\subsection{Inference Throughput}
+\subsection{Inference Cost}
 
-\begin{table}[H]
-\centering
-\caption{Inference Performance (FP8, H100 GPU)}
-\begin{tabular}{lll}
-\toprule
-\textbf{Output Mode} & \textbf{Throughput} & \textbf{P95 Latency} \\
-\midrule
-Verdict + category only & 1,200 items/s & 4.8ms \\
-Full explanation (avg 120 tokens) & 180 items/s & 31ms \\
-Full explanation + remediation & 120 items/s & 47ms \\
-\bottomrule
-\end{tabular}
-\end{table}
+Because Zen-Guard-Gen is a 7.61B-parameter generative model, its serving cost is that of an
+8B-class LLM and is dominated by the number of output tokens: a verdict-only response is
+cheap, while a full explanation plus remediation generates many more tokens and is
+correspondingly slower. Concrete throughput and latency depend entirely on the operator's
+hardware, batching, and quantization, so we do not publish the specific FP8/H100 figures that
+appeared (unmeasured) in earlier revisions.
 
 \section{Related Work}
 
-Content safety classification has been addressed through fine-tuned BERT-class models \cite{perspective}, larger generative classifiers \cite{llmguard}, and rule-based systems \cite{cld}. Explanation generation for classification decisions has been studied under the framing of rationale extraction \cite{rationale} and chain-of-thought safety reasoning \cite{cot_safety}. Zen-Guard-Gen is the first production-scale system to integrate generative explanations, policy document conditioning, and remediation suggestions into a unified safety classification model.
+Content safety classification has been addressed through fine-tuned BERT-class models \cite{perspective}, LLM-based guardrails such as Llama Guard \cite{llmguard}, and rule-based systems \cite{cld}. Explanation generation for classification decisions has been studied under the framing of rationale extraction \cite{rationale} and chain-of-thought safety reasoning \cite{cot_safety}. Zen-Guard-Gen sits in the LLM-guardrail line: it is a Qwen2.5-7B base~\cite{qwen25} fine-tuned to produce a verdict together with an explanation, a policy reference, and a remediation suggestion.
 
 \section{Conclusion}
 
-Zen-Guard-Gen advances content safety classification from opaque binary decisions to transparent, auditable, policy-referenced verdicts with natural language explanations and remediation guidance. At 8B parameters it achieves 99.1\% ToxiGen and 97.4\% HatEval accuracy, matching or exceeding discriminative classifiers while providing substantially richer outputs for human review workflows. The generative formulation also provides superior adversarial robustness (93.5\% vs. 76.6\% average attack detection) because semantic reasoning, not surface pattern matching, drives the classification. Zen-Guard-Gen is suitable for both high-throughput automated moderation and high-stakes escalation review in trust-and-safety teams.
+Zen-Guard-Gen is a generative safety classifier built by fine-tuning Alibaba's Apache-2.0 Qwen2.5-7B base model~\cite{qwen25}; it is not a from-scratch model and uses no ``Zen MoDE'' architecture. Its premise is that a safety classifier which must \emph{explain} its verdict (with a policy reference and a remediation suggestion) yields more auditable, contestable decisions than an opaque binary label. We deliberately make no benchmark claims: the upstream base has no published safety metrics, and we have not run a rigorous evaluation of the fine-tune, so the inflated ToxiGen/HatEval/MOS/robustness figures of earlier revisions have been removed as fabrications. Operators should validate the model on their own content distribution before relying on it.
+
+\section*{Attribution}
+
+The base weights, training, license, and capabilities are Alibaba's Qwen2.5-7B (\texttt{Qwen/Qwen2.5-7B}, Apache-2.0); Zen contributes a safety-instruction fine-tune and packaging. We thank the Qwen team for releasing the base model openly.
 
 \begin{thebibliography}{9}
+\bibitem{qwen25} Qwen Team, Alibaba (2024). Qwen2.5 Technical Report. arXiv:2412.15115. Base model: \texttt{Qwen/Qwen2.5-7B} (Apache-2.0).
 \bibitem{perspective} Lees, A. et al. (2022). A New Generation of Perspective API: Efficient Multilingual Character-level Transformers. arXiv:2202.11176.
 \bibitem{llmguard} Inan, H. et al. (2023). Llama Guard: LLM-based Input-Output Safeguard for Human-AI Conversations. arXiv:2312.06674.
 \bibitem{cld} Waseem, Z. et al. (2016). Hateful Symbols or Hateful People? Predictive Features for Hate Speech Detection on Twitter. NAACL 2016.
