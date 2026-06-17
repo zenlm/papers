@@ -13,7 +13,7 @@
 \definecolor{zenblue}{RGB}{41,121,255}
 \hypersetup{colorlinks=true,linkcolor=zenblue,urlcolor=zenblue,citecolor=zenblue}
 
-\title{\textbf{Zen-Dub-Live: Real-Time Streaming AI Dubbing\\
+\title{\textbf{Zen-Dub-Live: A Real-Time Streaming Dubbing Pipeline\\
 for Live Video Content}\\[0.5em]
 \large Technical Whitepaper v2025.04}
 \author{Zach Kelling \\ Zen LM Research Team\\
@@ -25,7 +25,20 @@ for Live Video Content}\\[0.5em]
 \maketitle
 
 \begin{abstract}
-Zen-Dub-Live is a 1 billion parameter streaming dubbing model designed for real-time AI dubbing of live video content, achieving end-to-end latency under 200ms (P95: 187ms) while supporting simultaneous translation and voice synthesis in 20+ languages. Unlike offline dubbing systems that process pre-recorded content with multi-second latency budgets, Zen-Dub-Live operates in a true streaming regime: it begins producing synthesized speech before the source speaker has finished the current utterance. The system achieves a speaker similarity mean opinion score of 4.0/5 and a livestream audio quality MOS of 3.9/5, demonstrating that streaming constraints do not require sacrificing perceptual quality. This paper describes the model architecture, streaming inference pipeline, latency decomposition, and quality evaluation.
+Zen-Dub-Live is a real-time streaming dubbing \emph{pipeline} for live video, built
+on existing openly-licensed models---not a 1-billion-parameter model trained from
+scratch. Its speech understanding and translation-to-speech path is Alibaba's
+\textbf{Qwen3-Omni}~\cite{qwen3omni} (Apache~2.0), a natively end-to-end omni-modal
+model whose Thinker--Talker design performs speech-to-speech translation directly
+(audio understanding, translation, and speech generation in one model), with reported
+first-packet latency of 234\,ms for audio and 547\,ms for video. Anchor-specific voice
+cloning is provided by \textbf{Qwen3-TTS}~\cite{qwen3tts} (Apache~2.0), and optional
+lip synchronization for video uses \textbf{MuseTalk}~\cite{musetalk} (MIT). This paper
+describes the streaming pipeline, the role and provenance of each component, and the
+engineering (bounded-queue orchestration, in-order release) that turns the underlying
+models into a live workflow. Latency and quality figures are attributed to the
+upstream components or to the sibling measured Zen Live-Dub report rather than
+re-measured here.
 \end{abstract}
 
 \tableofcontents
@@ -44,288 +57,167 @@ Live video dubbing presents constraints that differ fundamentally from recorded 
 
 Zen-Dub-Live addresses all four requirements through a streaming-first architecture that integrates speech recognition, machine translation, and voice synthesis in a unified, low-latency pipeline. The 1B parameter model is compact enough for real-time CPU-assisted inference on standard streaming infrastructure while maintaining the quality bar required for broadcast-grade live content.
 
-\subsection{Model Overview}
+\subsection{Pipeline Overview}
 
 \begin{table}[H]
 \centering
-\caption{Zen-Dub-Live Model Specification}
-\begin{tabular}{ll}
+\caption{Zen-Dub-Live components and provenance. The pipeline integrates these models;
+it does not train them.}
+\begin{tabular}{lll}
 \toprule
-\textbf{Parameter} & \textbf{Value} \\
+\textbf{Role} & \textbf{Component} & \textbf{License} \\
 \midrule
-Architecture & Streaming encoder-decoder with causal attention \\
-Total Parameters & 1B \\
-Supported Source Languages & 20+ \\
-Supported Target Languages & 20+ \\
-Language Pairs & 400+ \\
-End-to-End Latency P50 & 142ms \\
-End-to-End Latency P95 & 187ms \\
-Speaker Similarity MOS & 4.0/5 \\
-Livestream Quality MOS & 3.9/5 \\
-Version & v2025.04 \\
-Release Date & April 2025 \\
+Speech understanding + S2ST & Qwen3-Omni~\cite{qwen3omni} & Apache 2.0 \\
+Anchor voice cloning & Qwen3-TTS~\cite{qwen3tts} & Apache 2.0 \\
+Lip synchronization (video) & MuseTalk~\cite{musetalk} & MIT (code) \\
+Orchestration & Zen-Dub-Live (bounded-queue streaming) & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+Qwen3-Omni's Thinker--Talker architecture performs speech-to-speech translation
+end-to-end: a single model understands the source audio, translates, and generates
+target speech, so a separate ASR$\to$MT$\to$TTS cascade is not required. Per the
+upstream report, it supports 119 text languages, 19 speech-input languages, and 10
+speech-output languages, with reported first-packet latency of 234\,ms (audio) /
+547\,ms (video). These are upstream-reported figures, cited rather than re-measured.
 
 \section{Architecture}
 
 \subsection{Streaming Pipeline Overview}
 
-Zen-Dub-Live implements a fully streaming pipeline comprising four stages operating in a producer-consumer pipeline with bounded queues:
+Zen-Dub-Live is a streaming orchestration layer around upstream models. The streaming
+behavior---producing target speech before the source utterance completes---is provided
+by Qwen3-Omni's native streaming speech-to-speech path~\cite{qwen3omni}; the pipeline
+does not implement its own ASR encoder, translation model, or vocoder. The
+orchestration responsibilities are:
 
 \begin{enumerate}
-  \item \textbf{Streaming ASR}: Causal acoustic encoder + streaming language model head produces partial transcripts on each incoming audio chunk (20ms frames).
-  \item \textbf{Anticipatory Translation}: A lightweight anticipatory module predicts likely continuations of partial transcripts, enabling early translation before the utterance completes.
-  \item \textbf{Prosody-Aligned Synthesis}: A streaming neural TTS synthesizer generates audio chunks synchronized to the translation output, with prosody conditioned on the source speaker's pitch and rhythm.
-  \item \textbf{Voice Cloning}: A zero-shot voice cloning module adapts the synthesized audio to the source speaker's voice characteristics extracted from a 3-second rolling context window.
+  \item \textbf{Ingest and chunking}: Buffer incoming audio into frames and feed the
+        Qwen3-Omni streaming interface.
+  \item \textbf{Speech-to-speech translation}: Qwen3-Omni understands the source audio
+        and emits target speech end-to-end (no separate ASR$\to$MT$\to$TTS cascade).
+  \item \textbf{Anchor voice}: For a named anchor, Qwen3-TTS~\cite{qwen3tts} provides a
+        cloned voice from a reference clip; otherwise a built-in Qwen3-Omni voice is
+        used.
+  \item \textbf{Lip synchronization (video)}: MuseTalk~\cite{musetalk} regenerates the
+        mouth region to match the dubbed audio.
+  \item \textbf{Release}: Bounded queues with in-order release and graceful
+        drop-oldest behavior under overload.
 \end{enumerate}
 
-\subsection{Causal Streaming ASR}
+\subsection{What the orchestration layer does (and does not) do}
 
-Standard ASR models use bidirectional attention, requiring the full utterance before producing a transcript. Zen-Dub-Live uses a causal conformer encoder \cite{conformer} with a masked attention pattern that allows inference on streaming audio:
-
-\begin{equation}
-  \text{Attn}(Q, K, V) = \text{softmax}\left(\frac{Q K^T}{\sqrt{d_k}} + M_{\text{causal}}\right) V
-\end{equation}
-
-where $M_{\text{causal}}$ is a causal mask preventing attention to future frames. The encoder processes audio at 50Hz (20ms frames) with 1.5s of left context, balancing latency against acoustic model accuracy.
-
-A streaming CTC decoder produces partial hypotheses on each frame, with confidence-gated emission: only token hypotheses exceeding a confidence threshold $\tau = 0.85$ are committed and forwarded to the translation stage.
-
-\subsection{Anticipatory Translation}
-
-Translating partial utterances introduces the problem of syntactic incompleteness: source language sentences may be structurally incomplete mid-utterance, making direct translation ambiguous or incorrect. Zen-Dub-Live addresses this with an anticipatory translation module that:
-
-\begin{enumerate}
-  \item Maintains a probability distribution over likely utterance completions based on the partial transcript and language model priors.
-  \item Produces a translation hypothesis for the most likely completion.
-  \item Updates the hypothesis as new tokens are confirmed by the ASR stage.
-  \item Commits tokens to synthesis only when they are stable across the top-$k$ completion hypotheses.
-\end{enumerate}
-
-This anticipatory approach reduces synthesis lag by 40ms on average (measured against an oracle that waits for full utterance confirmation) at the cost of a 3.1\% retranslation rate when the hypothesis must be revised.
-
-\subsection{Streaming Neural TTS}
-
-The speech synthesis stage uses a streaming-compatible neural vocoder based on a modified LightSpeed architecture \cite{lightspeed}. The model generates audio samples in 20ms chunks, matching the input frame rate. Prosody conditioning is applied from a parallel prosody predictor:
-
-\begin{equation}
-  \hat{s}_t = \text{Vocoder}\left(c_t, p_t, v_t\right)
-\end{equation}
-
-where $c_t$ is the phoneme sequence, $p_t$ is the predicted pitch contour (Hz), and $v_t$ is the voice conditioning vector from the zero-shot cloning module.
-
-\subsection{Zero-Shot Voice Cloning}
-
-Speaker identity is preserved without pre-enrollment using a zero-shot voice cloning approach. A speaker encoder $E_\phi$ extracts a 256-dimensional voice embedding from a 3-second rolling window of original speech:
-
-\begin{equation}
-  v_t = E_\phi\left(a_{t-3s:t}\right)
-\end{equation}
-
-The voice embedding conditions the vocoder through cross-attention in the synthesis layers, transferring spectral envelope characteristics (timbre, formant patterns) while allowing the translated phoneme sequence to drive articulation. Speaker similarity is measured by cosine distance between voice embeddings of original and dubbed speech.
-
-\subsection{Latency Decomposition}
-
-The 187ms P95 end-to-end latency budget is allocated across pipeline stages:
-
-\begin{table}[H]
-\centering
-\caption{Latency Budget Decomposition}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Stage} & \textbf{P50 Latency} & \textbf{P95 Latency} \\
-\midrule
-Audio buffering (20ms frame) & 20ms & 20ms \\
-Streaming ASR & 28ms & 41ms \\
-Confidence gating delay & 12ms & 22ms \\
-Anticipatory translation & 31ms & 48ms \\
-Prosody prediction & 8ms & 12ms \\
-Neural TTS synthesis & 31ms & 44ms \\
-\midrule
-\textbf{Total end-to-end} & \textbf{142ms} & \textbf{187ms} \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\section{Training Methodology}
-
-\subsection{Data}
-
-Zen-Dub-Live is trained on a multilingual corpus of aligned speech and text:
-
-\begin{table}[H]
-\centering
-\caption{Training Data Composition}
-\begin{tabular}{lrl}
-\toprule
-\textbf{Source} & \textbf{Hours} & \textbf{Description} \\
-\midrule
-Broadcast speech (licensed) & 180,000 & News, documentary, sports commentary \\
-Multilingual audiobooks & 42,000 & 20+ languages, aligned text \\
-Spontaneous conversation & 28,000 & Podcast, interview, lecture \\
-Parallel speech corpus & 15,000 & Professional dubbing references \\
-Synthetic TTS augmentation & 60,000 & 120+ voice styles, 20 languages \\
-\midrule
-\textbf{Total} & \textbf{325,000} & \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Streaming Training Objective}
-
-The key training innovation is the \emph{streaming consistency loss} that penalizes revisions to committed synthesis tokens. When the anticipatory translation module must retranslate a committed segment (because the utterance completion differed from the predicted hypothesis), a revision penalty is applied:
-
-\begin{equation}
-  \mathcal{L}_{\text{stream}} = \mathcal{L}_{\text{TTS}} + \lambda_1 \mathcal{L}_{\text{speaker}} + \lambda_2 \mathcal{L}_{\text{revision}}
-\end{equation}
-
-where $\mathcal{L}_{\text{revision}} = \mathbb{E}[|\hat{t}_{\text{commit}} - \hat{t}_{\text{final}}|_1]$ penalizes the L1 distance between committed and final translations for the same utterance segments.
-
-\section{Evaluation}
+The engineering contribution is the streaming \emph{harness}---frame buffering,
+bounded queues, in-order release, and overload handling---not new acoustic or
+translation modeling. Earlier drafts of this document described bespoke components: a
+``causal conformer'' ASR with confidence-gated CTC emission, an ``anticipatory
+translation'' module with a measured ``40\,ms lag reduction'' and ``3.1\% retranslation
+rate,'' a ``modified LightSpeed'' streaming vocoder, and a custom 256-dimensional
+speaker encoder. Those components and their numbers were not real and have been
+removed. The corresponding capabilities (streaming S2ST, low first-packet latency,
+voice cloning) are provided by the upstream Qwen3-Omni and Qwen3-TTS models.
 
 \subsection{Latency}
 
-\begin{table}[H]
-\centering
-\caption{End-to-End Latency Benchmark (20+ language pairs)}
-\begin{tabular}{lccc}
-\toprule
-\textbf{Language Pair} & \textbf{P50} & \textbf{P95} & \textbf{P99} \\
-\midrule
-English $\to$ Spanish & 138ms & 181ms & 207ms \\
-English $\to$ Japanese & 148ms & 196ms & 224ms \\
-English $\to$ Arabic & 145ms & 192ms & 219ms \\
-Spanish $\to$ English & 141ms & 184ms & 211ms \\
-Mandarin $\to$ English & 152ms & 198ms & 231ms \\
-French $\to$ German & 139ms & 183ms & 209ms \\
-\textbf{Average (all pairs)} & \textbf{142ms} & \textbf{187ms} & \textbf{213ms} \\
-\bottomrule
-\end{tabular}
-\end{table}
+End-to-end latency is dominated by the upstream model's streaming behavior. Qwen3-Omni
+reports first-packet latency of 234\,ms (audio) and 547\,ms (video)~\cite{qwen3omni};
+total end-to-end latency in a deployment additionally includes ingest buffering,
+queueing, and (for video) lip-sync rendering, and should be measured on the target
+system. We do not publish a per-stage latency-budget table of our own, because the
+previous breakdown attributed time to components that do not exist. For
+directly-measured end-to-end live-latency figures on a closely-related license-clean
+pipeline, see the Zen Live-Dub report.
 
-\subsection{Speaker Similarity}
+\section{Engineering: Orchestration, Not Training}
 
-Speaker similarity is measured by cosine distance between speaker embeddings extracted from original and dubbed audio, converted to a 5-point MOS scale through a calibrated mapping validated on 500 human listener ratings.
+Zen-Dub-Live performs \emph{no} model training. There is no 325,000-hour training
+corpus and no ``streaming consistency loss''; earlier drafts described both, and they
+have been removed as fabricated. The underlying models are used as released
+(Qwen3-Omni~\cite{qwen3omni}, Qwen3-TTS~\cite{qwen3tts}, MuseTalk~\cite{musetalk}); the
+work here is the streaming harness described above.
 
-\begin{table}[H]
-\centering
-\caption{Speaker Similarity MOS (1--5 scale)}
-\begin{tabular}{lcc}
-\toprule
-\textbf{System} & \textbf{Speaker Similarity MOS} & \textbf{95\% CI} \\
-\midrule
-Zen-Dub-Live (streaming) & \textbf{4.0} & $\pm$0.12 \\
-Offline dubbing baseline & 4.4 & $\pm$0.09 \\
-Rule-based pitch shift & 2.8 & $\pm$0.18 \\
-No voice cloning & 1.9 & $\pm$0.21 \\
-\bottomrule
-\end{tabular}
-\end{table}
+\subsection{Streaming Orchestration Detail}
 
-The 0.4 MOS gap between Zen-Dub-Live and the offline baseline reflects the limited context available for zero-shot cloning in streaming mode.
+The orchestrator maintains bounded queues between stages and releases output in order;
+under sustained overload it drops the oldest pending unit rather than letting latency
+grow unboundedly. Because the heavy stage (S2ST and speech generation) is the upstream
+Qwen3-Omni model, throughput is governed by that model's service time on the available
+accelerator; the orchestrator's job is to keep queue residency low. (A detailed,
+\emph{measured} treatment of this throughput/latency relationship---including the
+finding that a single accelerator can become the bottleneck and the fix of offloading
+to a second machine---appears in the sibling Zen Live-Dub report.)
 
-\subsection{Translation Quality}
+\section{Evaluation}
 
-\begin{table}[H]
-\centering
-\caption{Translation Quality (BLEU, case-sensitive)}
-\begin{tabular}{lccc}
-\toprule
-\textbf{Language Pair} & \textbf{Streaming BLEU} & \textbf{Offline BLEU} & \textbf{Gap} \\
-\midrule
-EN $\to$ ES & 38.4 & 41.2 & $-2.8$ \\
-EN $\to$ FR & 42.1 & 44.7 & $-2.6$ \\
-EN $\to$ DE & 34.6 & 37.3 & $-2.7$ \\
-EN $\to$ JA & 29.8 & 32.4 & $-2.6$ \\
-EN $\to$ ZH & 31.2 & 34.1 & $-2.9$ \\
-EN $\to$ AR & 28.4 & 31.2 & $-2.8$ \\
-\textbf{Average} & \textbf{34.1} & \textbf{36.8} & $\mathbf{-2.7}$ \\
-\bottomrule
-\end{tabular}
-\end{table}
+We do not present latency, speaker-similarity, translation-BLEU, or livestream-MOS
+benchmark tables for this pipeline. Earlier versions contained such tables with
+specific numbers (e.g.\ ``P95 187\,ms,'' ``speaker similarity MOS 4.0,'' ``BLEU 34.1''),
+attributed in part to components that do not exist; they have been removed rather than
+presented as measured results.
 
-The streaming mode incurs an average BLEU penalty of 2.7 points versus offline dubbing. This gap is attributable to anticipatory translation errors and the causal attention constraint in ASR.
+For grounded figures, readers should consult:
+\begin{itemize}
+  \item \textbf{Upstream component reports}: Qwen3-Omni~\cite{qwen3omni} for streaming
+        S2ST latency and language coverage; Qwen3-TTS~\cite{qwen3tts} for voice
+        cloning; MuseTalk~\cite{musetalk} for lip-sync throughput and fidelity.
+  \item \textbf{The Zen Live-Dub report}, which contains directly-measured and
+        independently-verified end-to-end live-latency, cross-lingual clone-similarity,
+        and watermark-survival numbers for a closely-related license-clean pipeline.
+\end{itemize}
 
-\subsection{Livestream Quality}
+\subsection{Language Coverage}
 
-\begin{table}[H]
-\centering
-\caption{Livestream Quality MOS (1--5 scale, 200 listener panel)}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Dimension} & \textbf{MOS Score} & \textbf{95\% CI} \\
-\midrule
-Audio intelligibility & 4.2 & $\pm$0.10 \\
-Naturalness & 3.8 & $\pm$0.14 \\
-Temporal synchronization & 3.9 & $\pm$0.12 \\
-Speaker consistency & 4.0 & $\pm$0.11 \\
-\textbf{Composite Livestream MOS} & \textbf{3.9} & $\pm$0.11 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Language Support}
-
-\begin{table}[H]
-\centering
-\caption{Supported Languages (source and target)}
-\begin{tabular}{lll}
-\toprule
-\textbf{Region} & \textbf{Languages} & \textbf{Pairs} \\
-\midrule
-Western European & EN, ES, FR, DE, IT, PT, NL & 42 \\
-Eastern European & PL, RU, CS, HU, RO, UK & 30 \\
-East Asian & ZH, JA, KO & 9 \\
-South/Southeast Asian & HI, ID, TH, VI, TR & 20 \\
-Middle East / North Africa & AR, FA & 2 \\
-\midrule
-\textbf{Total} & \textbf{23 languages} & \textbf{400+} \\
-\bottomrule
-\end{tabular}
-\end{table}
+Language coverage is inherited from the upstream models. Per the Qwen3-Omni
+report~\cite{qwen3omni}, the model supports 119 text languages, 19 speech-input
+languages, and 10 speech-output languages; usable dubbing language \emph{pairs} are
+the cross-product constrained by speech-output coverage. We cite these rather than
+asserting a separate count.
 
 \section{Deployment}
 
 \subsection{Infrastructure Requirements}
 
-Zen-Dub-Live is designed for deployment on standard streaming infrastructure:
-
-\begin{table}[H]
-\centering
-\caption{Inference Hardware Requirements}
-\begin{tabular}{llll}
-\toprule
-\textbf{Config} & \textbf{Hardware} & \textbf{Concurrent Streams} & \textbf{P95 Latency} \\
-\midrule
-GPU (recommended) & 1 $\times$ A10G 24GB & 48 streams & 187ms \\
-CPU-assisted & 16-core CPU + GPU & 24 streams & 194ms \\
-CPU-only (fallback) & 32-core CPU & 8 streams & 312ms \\
-\bottomrule
-\end{tabular}
-\end{table}
+Hardware requirements follow from the underlying models, principally Qwen3-Omni. Per
+Alibaba, Qwen3-Omni runs on GPU-class accelerators; exact VRAM, concurrent-stream
+capacity, and P95 latency depend on the variant, precision, and hardware and should be
+measured on the target deployment. We do not publish a hardware-requirements table with
+specific stream counts and latencies here, because the previous figures were tied to a
+fabricated 1B model and per-stage budget.
 
 \subsection{Integration}
 
-Zen-Dub-Live exposes a WebSocket API that accepts a streaming audio input (PCM 16kHz mono) and configuration parameters (source language, target language, voice cloning mode), and returns a streaming audio output (PCM 24kHz stereo or AAC for direct RTMP insertion). Integration with major streaming platforms (RTMP, WebRTC, HLS) is supported through the Zen LM streaming SDK.
+Zen-Dub-Live exposes a WebSocket API that accepts streaming audio (PCM 16\,kHz mono)
+plus configuration (source/target language, anchor-voice mode) and returns streaming
+audio (PCM, or AAC for direct RTMP insertion). Integration with common streaming
+transports (RTMP, WebRTC, HLS) is provided by the orchestration layer.
 
 \section{Related Work}
 
-Real-time speech translation has been addressed through cascaded \cite{cascade} and end-to-end \cite{s2st} approaches. Streaming ASR has advanced through CTC-based \cite{ctc} and recurrent neural network transducers \cite{rnnt}. Zero-shot voice cloning for dubbing has been studied in \cite{voiceclone}. Zen-Dub-Live is the first system to integrate all components into a unified streaming model with sub-200ms end-to-end latency for live broadcast use.
+Real-time speech translation has been addressed through cascaded~\cite{cascade} and
+end-to-end~\cite{s2st} approaches. Recent omni-modal models such as
+Qwen3-Omni~\cite{qwen3omni} perform speech-to-speech translation natively in a single
+model. Zen-Dub-Live is not a new model of this kind; it is an orchestration layer that
+makes such an upstream model usable as a live, optionally lip-synchronized, dubbing
+service.
 
 \section{Conclusion}
 
-Zen-Dub-Live achieves real-time AI dubbing of live video content with P95 end-to-end latency of 187ms, speaker similarity MOS of 4.0, and livestream quality MOS of 3.9 across 20+ languages and 400+ language pairs. The streaming-first architecture, anticipatory translation module, and zero-shot voice cloning combine to deliver broadcast-quality dubbing within live streaming latency constraints. Zen-Dub-Live opens practical AI dubbing to live sports, news, and entertainment broadcasting without requiring offline post-processing workflows.
+Zen-Dub-Live is a streaming \emph{orchestration} layer over openly-licensed
+models---Qwen3-Omni for native speech-to-speech translation, Qwen3-TTS for anchor voice
+cloning, and MuseTalk for lip synchronization---rather than a 1B model trained from
+scratch. Its contribution is the live harness (bounded queues, in-order release,
+overload handling) and license-clean assembly. Quantitative claims belong to the
+upstream components or to the directly-measured Zen Live-Dub report; the
+previously-stated latency and MOS numbers were not measured for this pipeline and have
+been removed.
 
 \begin{thebibliography}{9}
-\bibitem{conformer} Gulati, A. et al. (2020). Conformer: Convolution-augmented Transformer for Speech Recognition. Interspeech 2020.
-\bibitem{lightspeed} Kim, J. et al. (2024). LightSpeed: Light and Fast Neural Vocoder using Dual WaveNet. ICASSP 2024.
+\bibitem{qwen3omni} Qwen Team, Alibaba Cloud. (2025). Qwen3-Omni Technical Report. \textit{arXiv:2509.17765}. Code/weights: \url{https://github.com/QwenLM/Qwen3-Omni} (Apache 2.0).
+\bibitem{qwen3tts} Qwen Team, Alibaba Cloud. (2026). Qwen3-TTS: Open-Source Streaming Text-to-Speech with Voice Cloning. \url{https://github.com/QwenLM/Qwen3-TTS} (Apache 2.0).
+\bibitem{musetalk} Zhang, Y. et al. (Lyra Lab, Tencent Music). (2024). MuseTalk: Real-Time High-Fidelity Video Dubbing via Spatio-Temporal Sampling. \textit{arXiv:2410.10122}. Code: MIT.
 \bibitem{cascade} Nakamura, M. et al. (2023). Cascade vs. Direct: What's Best for Simultaneous Speech Translation? ACL 2023.
 \bibitem{s2st} Lee, A. et al. (2022). Direct Speech-to-Speech Translation with Discrete Units. ACL 2022.
-\bibitem{ctc} Graves, A. et al. (2006). Connectionist Temporal Classification. ICML 2006.
-\bibitem{rnnt} Graves, A. (2012). Sequence Transduction with Recurrent Neural Networks. arXiv:1211.3711.
-\bibitem{voiceclone} Wang, C. et al. (2023). Neural Codec Language Models are Zero-Shot Text to Speech Synthesizers. arXiv:2301.02111.
 \end{thebibliography}
 
 \end{document}

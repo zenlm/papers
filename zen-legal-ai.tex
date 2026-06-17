@@ -23,7 +23,7 @@
 \maketitle
 
 \begin{abstract}
-We present Zen Legal, a suite of AI models for legal research, document analysis, and contract review built on the Zen MoDE (Mixture of Distilled Experts) backbone. Zen Legal addresses the fundamental requirements of legal AI: citation-grounded generation, multi-jurisdiction reasoning, precise language preservation, and privilege protection. On standardized legal benchmarks: LegalBench 81.4\%, CUAD contract clause extraction 89.3\%, contract clause classification F1 0.923, and case outcome prediction 74.2\%. We describe the legal domain adaptation methodology, citation architecture, jurisdiction-aware reasoning, and professional responsibility guardrails.
+We present Zen Legal, a domain-adapted language model for legal research, document analysis, and contract review. Zen Legal is \emph{not} a from-scratch model: it is a supervised fine-tune of the openly licensed \textbf{Qwen3-8B} base model (developed by Alibaba and released under the Apache-2.0 license), adapted to the legal domain using the Zen-Pro fine-tuning recipe. Building on Qwen3-8B's general reasoning and instruction-following capabilities, Zen Legal targets the fundamental requirements of legal AI: citation-grounded generation, multi-jurisdiction reasoning, precise language preservation, and privilege protection. This report describes the legal domain adaptation methodology, the citation-grounding and retrieval architecture, jurisdiction-aware reasoning, and professional responsibility guardrails. We deliberately do not report headline accuracy figures on legal benchmarks here; rather, we describe the adaptation qualitatively and point to the public benchmarks (LegalBench, CUAD, and others) against which legal language models should be evaluated under transparent, reproducible protocols.
 \end{abstract}
 
 \section{Introduction}
@@ -42,27 +42,31 @@ Zen Legal is built on the premise that the primary role of AI in legal contexts 
 
 \section{Legal Domain Adaptation}
 
-\subsection{Training Corpus}
+\subsection{Base Model and Licensing}
 
-Zen Legal is fine-tuned on a 380-billion-token legal corpus:
+Zen Legal is a domain fine-tune, not a model trained from scratch. The base model is \textbf{Qwen3-8B}~\cite{qwen3}, an 8-billion-parameter dense transformer developed and released by Alibaba under the Apache-2.0 license. We chose Qwen3-8B for its strong general reasoning, long-context handling, and instruction-following behavior, together with a permissive license that allows redistribution of derived weights. All capability claims in this report should be read as the result of \emph{adapting} this base model to the legal domain; the underlying architecture, pre-training, and general-domain knowledge are inherited from Qwen3-8B and are the work of its original authors, whom we credit accordingly. Zen Legal is \emph{not} based on a bespoke ``Zen MoDE'' or mixture-of-experts backbone.
+
+\subsection{Fine-Tuning Corpus}
+
+Zen Legal is fine-tuned on a large legal corpus assembled from the following sources. The corpus is used for continued pre-training and supervised fine-tuning on top of Qwen3-8B; the relative weights below describe sampling proportions during adaptation, not pre-training-scale token budgets.
 
 \begin{table}[H]
 \centering
-\caption{Legal training corpus composition}
+\caption{Legal fine-tuning corpus composition (relative sampling share during domain adaptation of Qwen3-8B)}
 \label{tab:corpus}
-\begin{tabular}{lcc}
+\begin{tabular}{lc}
 \toprule
-Source & Tokens (B) & Coverage \\
+Source & Coverage \\
 \midrule
-Federal case law (PACER, CourtListener) & 68 & 1789--2025 \\
-State case law (all 50 states) & 84 & Selective post-1970 \\
-Federal statutory code (USC) & 8.4 & Current \\
-Code of Federal Regulations (CFR) & 12 & Current \\
-Law review articles (HeinOnline) & 48 & 1820--2025 \\
-International law (UN, EU, OECD) & 28 & 1945--2025 \\
-Legal contracts and agreements & 92 & Commercial \\
-Bar exam materials and treatises & 14 & Current \\
-Synthetic legal QA pairs & 26 & All jurisdictions \\
+Federal case law (PACER, CourtListener) & 1789--2025 \\
+State case law (all 50 states) & Selective post-1970 \\
+Federal statutory code (USC) & Current \\
+Code of Federal Regulations (CFR) & Current \\
+Law review articles (HeinOnline) & 1820--2025 \\
+International law (UN, EU, OECD) & 1945--2025 \\
+Legal contracts and agreements & Commercial \\
+Legal treatises and study materials & Current \\
+Synthetic legal QA pairs & All jurisdictions \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -78,7 +82,7 @@ Legal citations require hyper-precise attribution: case name, reporter, volume, 
   \item \textbf{Attribution}: The model generates text with inline citation markers that link to verified source documents.
 \end{enumerate}
 
-Citation accuracy (citation exists and supports the stated proposition) reaches 96.8\% on internal held-out evaluation by licensed attorneys.
+Citation accuracy---whether a generated citation exists and supports the stated proposition---is the central evaluation target for this pipeline and should be measured on a held-out set reviewed by licensed attorneys. We report no headline accuracy figure here; the retrieval-plus-verification design is intended to make uncited or unverifiable assertions structurally impossible rather than to maximize a single benchmark number.
 
 \section{Multi-Jurisdiction Reasoning}
 
@@ -93,10 +97,9 @@ Every legal query is classified by the applicable jurisdiction(s) before substan
 \end{itemize}
 
 \begin{equation}
-P(j \mid q) = \text{softmax}(\mathbf{W}_j \cdot \text{ZenMoDE}(q))
+P(j \mid q) = \text{softmax}(\mathbf{W}_j \cdot \phi(q))
 \end{equation}
-
-Jurisdiction classification accuracy: 97.4\% for US federal/state classification, 94.2\% for international jurisdiction identification.
+where $\phi(q)$ is the contextual representation produced by the fine-tuned Qwen3-8B backbone and $\mathbf{W}_j$ is a lightweight jurisdiction-classification head learned during adaptation.
 
 \subsection{Circuit Splits and Unsettled Law}
 
@@ -111,38 +114,11 @@ When a question implicates a circuit split or unsettled area of law, Zen Legal:
 
 \section{Contract Analysis}
 
-\subsection{CUAD Benchmark Tasks}
+\subsection{CUAD Clause Extraction}
 
-The Contract Understanding Atticus Dataset (CUAD) includes 41 clause types across commercial contracts. Zen Legal achieves the following results:
+The Contract Understanding Atticus Dataset (CUAD)~\cite{cuad} is the standard public benchmark for commercial contract clause extraction. It annotates 41 clause types across hundreds of commercial agreements, including governing law, limitation of liability, indemnification, non-compete, termination for cause, assignment, IP ownership, audit rights, change of control, warranty duration, renewal term, most-favored-nation, exclusivity, anti-assignment, and force majeure clauses. Zen Legal's domain adaptation explicitly targets this clause taxonomy: the fine-tuning corpus includes contract text labeled with these clause categories, and the model is trained to extract and span-tag clauses by type.
 
-\begin{table}[H]
-\centering
-\caption{CUAD contract clause extraction F1 (top 15 clause types)}
-\label{tab:cuad}
-\begin{tabular}{lcc}
-\toprule
-Clause Type & F1 & Recall \\
-\midrule
-Governing Law & 0.972 & 0.981 \\
-Limitation of Liability & 0.941 & 0.958 \\
-Indemnification & 0.928 & 0.944 \\
-Non-compete & 0.918 & 0.934 \\
-Termination for Cause & 0.924 & 0.941 \\
-Assignment & 0.931 & 0.948 \\
-IP Ownership & 0.912 & 0.928 \\
-Audit Rights & 0.904 & 0.921 \\
-Change of Control & 0.896 & 0.914 \\
-Warranty Duration & 0.884 & 0.902 \\
-Renewal Term & 0.918 & 0.934 \\
-Most Favored Nation & 0.872 & 0.891 \\
-Exclusivity & 0.868 & 0.888 \\
-Anti-assignment & 0.914 & 0.931 \\
-Force Majeure & 0.894 & 0.912 \\
-\midrule
-\textbf{CUAD Average (41 types)} & \textbf{0.923} & \textbf{0.938} \\
-\bottomrule
-\end{tabular}
-\end{table}
+We report no per-clause accuracy figures in this report. CUAD is a public benchmark with a published evaluation protocol, and we recommend that any deployment of Zen Legal be evaluated against it directly, with the evaluation harness, model version, and prompt configuration disclosed so that results are reproducible and comparable to the published CUAD baselines.
 
 \subsection{Contract Risk Scoring}
 
@@ -155,73 +131,23 @@ Beyond clause extraction, Zen Legal generates risk assessments for each contract
   \item \textbf{Redline suggestions}: Proposes alternative language for high-risk clauses with explanation.
 \end{itemize}
 
-\section{Legal Benchmark Results}
+\section{Evaluation Methodology}
 
-\subsection{LegalBench}
+Rather than report headline scores, this section names the public benchmarks against which a legal language model such as Zen Legal should be evaluated, and the protocol we recommend. Because Zen Legal is a fine-tune of Qwen3-8B, the appropriate comparison is between the adapted model and the unmodified Qwen3-8B base, holding the evaluation harness and prompts fixed, so that any measured difference is attributable to the legal adaptation rather than to a different backbone.
 
-LegalBench is a collaborative benchmark of 162 legal reasoning tasks spanning case law, statutes, and legal documents across diverse legal domains.
+\subsection{Recommended Public Benchmarks}
 
-\begin{table}[H]
-\centering
-\caption{LegalBench results by legal domain}
-\label{tab:legalbench}
-\begin{tabular}{lcc}
-\toprule
-Domain & Tasks & Accuracy \\
-\midrule
-Contract law & 28 & 84.2\% \\
-Constitutional law & 18 & 79.4\% \\
-Administrative law & 14 & 77.8\% \\
-Criminal law & 22 & 82.4\% \\
-Tort law & 16 & 83.8\% \\
-Statutory interpretation & 24 & 80.2\% \\
-International law & 12 & 76.8\% \\
-Procedural law & 28 & 83.4\% \\
-\midrule
-\textbf{LegalBench Overall} & \textbf{162} & \textbf{81.4\%} \\
-\bottomrule
-\end{tabular}
-\end{table}
+\begin{itemize}
+  \item \textbf{LegalBench}~\cite{legalbench}: a collaboratively built benchmark of 162 legal-reasoning tasks spanning contract, constitutional, administrative, criminal, and tort law, statutory interpretation, international law, and procedure. It is the most comprehensive public measure of legal reasoning in language models and exercises exactly the capabilities the domain adaptation targets.
+  \item \textbf{CUAD}~\cite{cuad}: commercial contract clause extraction across 41 clause types (see the Contract Analysis section above).
+  \item \textbf{ECHR judgment prediction}~\cite{echr}: legal judgment prediction over European Court of Human Rights cases.
+  \item \textbf{ContractNLI}~\cite{contractnli}: document-level natural-language inference over contracts (e.g.\ obligation and entailment detection).
+  \item \textbf{Multi-LexSum}~\cite{multilexsum}: abstractive summarization of civil-rights litigation records.
+\end{itemize}
 
-\subsection{Case Outcome Prediction}
+\subsection{Reporting Protocol}
 
-\begin{table}[H]
-\centering
-\caption{Case outcome prediction accuracy by court level}
-\label{tab:outcome}
-\begin{tabular}{lccc}
-\toprule
-Court & Cases & Accuracy & AUC \\
-\midrule
-U.S. Supreme Court & 8,412 & 78.4\% & 0.841 \\
-U.S. Circuit Courts & 142,841 & 74.8\% & 0.812 \\
-U.S. District Courts & 284,121 & 72.4\% & 0.784 \\
-State Supreme Courts & 48,412 & 71.8\% & 0.778 \\
-\midrule
-\textbf{Overall} & — & \textbf{74.2\%} & \textbf{0.804} \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Legal NLP Tasks}
-
-\begin{table}[H]
-\centering
-\caption{Legal NLP task results}
-\label{tab:legal_nlp}
-\begin{tabular}{llcc}
-\toprule
-Task & Dataset & Metric & Score \\
-\midrule
-Statute classification & EUR-Lex & Micro-F1 & 0.848 \\
-Legal judgment prediction & ECHR & Accuracy & 81.4\% \\
-Obligation detection & ContractNLI & F1 & 0.872 \\
-Legal argument mining & ECHRArguments & F1 & 0.814 \\
-Regulatory compliance & PrivacyQA & F1 & 0.864 \\
-Legal summarization & Multi-LexSum & ROUGE-L & 0.384 \\
-\bottomrule
-\end{tabular}
-\end{table}
+For each benchmark we recommend disclosing: the exact model version and quantization, the prompt template, the decoding parameters, the evaluation harness, and a side-by-side result for the unmodified Qwen3-8B base. We also recommend reporting calibration (how often a stated confidence matches empirical accuracy) and citation-verifiability rates, which matter more for safe legal use than raw task accuracy. Case-outcome \emph{prediction} is deliberately excluded from our recommended deployment evaluations: predicting how a court will rule is ethically fraught, prone to spurious correlation, and not a use we endorse for an augmentation tool.
 
 \section{Legal Research Workflow}
 
@@ -237,24 +163,7 @@ Zen Legal generates complete legal memoranda following standard structure:
   \item \textbf{Conclusion}: Summary of findings and recommended next steps.
 \end{enumerate}
 
-Attorney evaluation of generated memoranda (blind comparison vs. associate-drafted):
-
-\begin{table}[H]
-\centering
-\caption{Attorney evaluation of AI-generated legal memoranda (N=150)}
-\label{tab:memo_eval}
-\begin{tabular}{lcc}
-\toprule
-Criterion & Zen Legal Score & Associate Avg \\
-\midrule
-Legal accuracy & 4.24 / 5 & 4.18 / 5 \\
-Citation completeness & 4.41 / 5 & 3.84 / 5 \\
-Analytical clarity & 4.08 / 5 & 4.28 / 5 \\
-Conclusion soundness & 4.18 / 5 & 4.22 / 5 \\
-\textbf{Overall} & \textbf{4.23 / 5} & \textbf{4.13 / 5} \\
-\bottomrule
-\end{tabular}
-\end{table}
+The appropriate evaluation of generated memoranda is a blind, attorney-graded comparison against human-drafted work product, scored on legal accuracy, citation completeness, analytical clarity, and conclusion soundness. We do not report scores from such a study in this report; any quality claim of this kind should be backed by a pre-registered evaluation with disclosed rubric, sample size, and inter-rater agreement. As a structured-generation tool, Zen Legal's intended advantage is in citation completeness and systematic IRAC coverage rather than in replacing attorney judgment.
 
 \section{Professional Responsibility Compliance}
 
@@ -280,9 +189,10 @@ Per ABA Model Rule 5.3, attorneys using AI tools must supervise the AI's work co
 
 \section{Conclusion}
 
-Zen Legal demonstrates that rigorous citation grounding, jurisdictional awareness, and professional responsibility compliance can be integrated into a production legal AI system without sacrificing capability. The 81.4\% LegalBench score, 89.3\% CUAD clause extraction, and 0.923 contract clause F1 establish Zen Legal as state-of-the-art for AI-assisted legal research, with attorney evaluations confirming practical utility comparable to junior associate work product.
+Zen Legal demonstrates that rigorous citation grounding, jurisdictional awareness, and professional responsibility compliance can be layered onto an openly licensed general-purpose model through targeted domain fine-tuning. Built as an Apache-2.0 fine-tune of Qwen3-8B rather than a from-scratch system, it inherits a strong, transparently licensed foundation and adds the retrieval, verification, and guardrail machinery that legal use demands. We have intentionally avoided headline benchmark claims in this report; the honest measure of Zen Legal is a reproducible, attorney-reviewed evaluation against public benchmarks such as LegalBench and CUAD, reported side-by-side with the unmodified Qwen3-8B base so that the contribution of the legal adaptation is transparent.
 
 \begin{thebibliography}{99}
+\bibitem{qwen3} Qwen Team, Alibaba Group. Qwen3 Technical Report. 2025. Models released under the Apache-2.0 license. \url{https://github.com/QwenLM/Qwen3}
 \bibitem{legalbench} Guha, N. et al. LegalBench: A Collaboratively Built Benchmark for Measuring Legal Reasoning in Large Language Models. \textit{NeurIPS}, 2023.
 \bibitem{cuad} Hendrycks, D. et al. CUAD: An Expert-Annotated NLP Dataset for Legal Contract Review. \textit{NeurIPS}, 2021.
 \bibitem{echr} Chalkidis, I. et al. Neural Legal Judgment Prediction in English. \textit{ACL}, 2019.

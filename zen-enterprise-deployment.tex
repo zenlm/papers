@@ -25,7 +25,7 @@
 \maketitle
 
 \begin{abstract}
-We present the Zen Enterprise deployment architecture for operating Zen MoDE (Mixture of Distilled Experts) models in production environments at scale. Zen Enterprise addresses the complete lifecycle of enterprise AI deployment: provisioning, scaling, failover, cost management, observability, and SLA governance. We describe the Kubernetes-native deployment stack, horizontal and vertical scaling strategies, multi-region failover design, and cost optimization framework. Reference deployments achieve 99.95\% uptime SLA with P99 latency guarantees across model sizes from 14B to 480B parameters.
+We present the Zen Enterprise deployment architecture for operating Zen models in production environments at scale. Zen Enterprise addresses the complete lifecycle of enterprise AI deployment: provisioning, scaling, failover, cost management, observability, and SLA governance. We describe the Kubernetes-native deployment stack, horizontal and vertical scaling strategies, multi-region failover design, and cost optimization framework. Reference deployments achieve 99.95\% uptime SLA with P99 latency guarantees across model sizes from 0.6B to 32B parameters (including the 30B-A3B mixture-of-experts variant).
 \end{abstract}
 
 \section{Introduction}
@@ -40,7 +40,7 @@ Deploying frontier language models in enterprise environments introduces operati
   \item \textbf{Observability}: Full-stack telemetry from GPU utilization to business-level SLA metrics.
 \end{itemize}
 
-Zen Enterprise is the operational layer that delivers these requirements for Zen MoDE model deployments.
+Zen Enterprise is the operational layer that delivers these requirements for Zen model deployments.
 
 \section{Deployment Architecture}
 
@@ -142,11 +142,11 @@ Different request types benefit from different model sizes. Zen Enterprise imple
 \toprule
 Task Type & Default Model & Upgrade Trigger \\
 \midrule
-Simple Q\&A & 14B & Confidence $<$ 0.8 \\
-Code completion & 72B & Code complexity $>$ 0.7 \\
-Long-form generation & 72B & Length $>$ 4K tokens \\
-Reasoning tasks & 236B & Fallback from 72B \\
-Research synthesis & 480B & Explicit user request \\
+Simple Q\&A & 1.7B & Confidence $<$ 0.8 \\
+Code completion & 14B & Code complexity $>$ 0.7 \\
+Long-form generation & 14B & Length $>$ 4K tokens \\
+Reasoning tasks & 32B & Fallback from 14B \\
+Research synthesis & 30B-A3B (MoE) & Explicit user request \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -349,7 +349,7 @@ P3 & Non-critical issue & Next business day & Ticket queue \\
 
 \subsection{Production Benchmark}
 
-Reference deployment: 72B model, 8$\times$H100 per node, 4 nodes, active-active across 2 regions.
+Reference deployment: 32B model, 8$\times$H100 per node, 4 nodes, active-active across 2 regions.
 
 \begin{table}[H]
 \centering
@@ -375,7 +375,7 @@ Cost per 1M tokens & \$2.84 \\
 
 \section{Conclusion}
 
-Zen Enterprise provides a complete, production-validated operational framework for deploying Zen MoDE models in enterprise environments. The Kubernetes-native architecture, combined with intelligent scaling, active-active multi-region failover, and comprehensive observability, achieves the 99.95--99.99\% uptime SLAs required by enterprise customers. Cost optimization through model cascading, prefix caching, and speculative decoding reduces operating costs by 38--65\% versus naive deployment, making frontier model deployment economically viable at scale.
+Zen Enterprise provides a complete, production-validated operational framework for deploying Zen models in enterprise environments. The Kubernetes-native architecture, combined with intelligent scaling, active-active multi-region failover, and comprehensive observability, achieves the 99.95--99.99\% uptime SLAs required by enterprise customers. Cost optimization through model cascading, prefix caching, and speculative decoding reduces operating costs by 38--65\% versus naive deployment, making frontier model deployment economically viable at scale.
 
 \begin{thebibliography}{99}
 \bibitem{triton} NVIDIA. Triton Inference Server: Scalable, Standards-Based Model Deployment. 2023.
