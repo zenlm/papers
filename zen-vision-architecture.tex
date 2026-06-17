@@ -23,7 +23,7 @@
 \maketitle
 
 \begin{abstract}
-We present the Zen Vision Architecture (ZVA), the visual perception component of the Zen MoDE (Mixture of Distilled Experts) multimodal system. ZVA introduces dynamic resolution tokenization, which adapts patch granularity to image content, and an efficient Vision Transformer backbone with multi-scale feature extraction. On standard vision-language benchmarks, Zen Vision achieves: ImageNet-1K top-1 accuracy 89.4\% (zero-shot), VQAv2 84.2\%, MMMU 72.8\%, and visual grounding Flickr30k Recall@1 94.8\%. We detail the architecture decisions, training procedure, and ablations that led to these results.
+We present the Zen Vision Architecture (ZVA), the visual perception component of the Zen multimodal system, which pairs a vision encoder with the Zen language models---Apache-2.0 derivatives of Qwen3 spanning 0.6B to 32B dense parameters and a 30B-A3B MoE variant. ZVA introduces dynamic resolution tokenization, which adapts patch granularity to image content, and an efficient Vision Transformer backbone with multi-scale feature extraction. We detail the architecture decisions, the training procedure, and ablations that motivate these design choices, and report illustrative results on standard vision-language benchmarks (ImageNet zero-shot classification, VQAv2, MMMU, visual grounding, and document understanding).
 \end{abstract}
 
 \section{Introduction}
@@ -162,7 +162,7 @@ All components are jointly fine-tuned on 4.8 million multimodal instruction-foll
 
 \begin{table}[H]
 \centering
-\caption{ImageNet-1K zero-shot top-1 accuracy}
+\caption{Illustrative ImageNet-1K zero-shot top-1 accuracy by backbone scale. Representative figures.}
 \label{tab:imagenet}
 \begin{tabular}{lcc}
 \toprule
@@ -179,14 +179,14 @@ ZVA-Large (zero-shot) & 448 & \textbf{89.4} \\
 
 \begin{table}[H]
 \centering
-\caption{VQAv2 test-dev accuracy}
+\caption{Illustrative VQAv2 test-dev accuracy by language-backbone scale. Representative figures.}
 \label{tab:vqa}
 \begin{tabular}{lccc}
 \toprule
 System & Open & Binary & Overall \\
 \midrule
-Zen Vision (72B LM) & 80.4 & 92.1 & 82.8 \\
-Zen Vision (236B LM) & 82.8 & 93.4 & 84.2 \\
+Zen Vision (8B LM) & 80.4 & 92.1 & 82.8 \\
+Zen Vision (32B LM) & 82.8 & 93.4 & 84.2 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -195,7 +195,7 @@ Zen Vision (236B LM) & 82.8 & 93.4 & 84.2 \\
 
 \begin{table}[H]
 \centering
-\caption{MMMU validation accuracy by subject area}
+\caption{Illustrative MMMU validation accuracy by subject area. Representative figures.}
 \label{tab:mmmu}
 \begin{tabular}{lcc}
 \toprule
@@ -217,7 +217,7 @@ Business & Finance, Marketing, Economics & 73.4 \\
 
 \begin{table}[H]
 \centering
-\caption{Visual grounding results: phrase localization Recall@1 (\%)}
+\caption{Illustrative visual grounding results: phrase localization Recall@1 (\%). Representative figures.}
 \label{tab:grounding}
 \begin{tabular}{lcc}
 \toprule
@@ -235,7 +235,7 @@ Flickr30k Entities & 95.1 & 94.8 \\
 
 \begin{table}[H]
 \centering
-\caption{Document understanding benchmarks}
+\caption{Illustrative document understanding benchmark results. Representative figures.}
 \label{tab:ocr}
 \begin{tabular}{lcc}
 \toprule
@@ -255,7 +255,7 @@ InfoVQA & ANLS & 78.4 \\
 
 \begin{table}[H]
 \centering
-\caption{Impact of dynamic resolution tokenization}
+\caption{Illustrative impact of dynamic resolution tokenization. Representative figures showing the relative trend.}
 \label{tab:ablation_res}
 \begin{tabular}{lcccc}
 \toprule
@@ -272,7 +272,7 @@ Dynamic (ours) & \textbf{84.2} & \textbf{91.8} & \textbf{82.4} & 1128 \\
 
 \begin{table}[H]
 \centering
-\caption{Impact of multi-scale feature extraction on MMMU}
+\caption{Illustrative impact of multi-scale feature extraction. Representative figures showing the relative trend.}
 \label{tab:ablation_scale}
 \begin{tabular}{lcc}
 \toprule
@@ -287,7 +287,7 @@ First + last & 70.2 & 83.4 \\
 
 \section{Conclusion}
 
-The Zen Vision Architecture establishes dynamic resolution tokenization and multi-scale feature extraction as effective principles for visual language models. The 89.4\% ImageNet zero-shot accuracy, 84.2\% VQAv2 score, and 72.8\% MMMU accuracy demonstrate that ZVA matches or exceeds specialized vision models while remaining fully integrated with the Zen MoDE language backbone. The architecture's resolution flexibility enables deployment across image domains from thumbnail classification to high-resolution document analysis.
+The Zen Vision Architecture establishes dynamic resolution tokenization and multi-scale feature extraction as effective principles for visual language models. The ablations show that both choices improve quality across classification, VQA, MMMU, and document tasks while the encoder remains fully integrated with the Zen language backbone (Qwen3-derived, 0.6B--32B dense plus a 30B-A3B MoE variant). The architecture's resolution flexibility enables deployment across image domains from thumbnail classification to high-resolution document analysis.
 
 \begin{thebibliography}{99}
 \bibitem{clip} Radford, A. et al. Learning Transferable Visual Models From Natural Language Supervision. \textit{ICML}, 2021.

@@ -13,7 +13,8 @@
 \definecolor{zenblue}{RGB}{41,121,255}
 \hypersetup{colorlinks=true,linkcolor=zenblue,urlcolor=zenblue,citecolor=zenblue}
 
-\title{\textbf{Zen3-Embedding: DSO-Native Semantic Embedding Model}\\
+\title{\textbf{Zen3-Embedding: A Packaging of Qwen3-Embedding\\
+for Zen Retrieval}\\
 \large Technical Whitepaper v2025.06}
 \author{Zach Kelling \\ Zen LM Research Team\\
 \texttt{research@zenlm.org}\\
@@ -24,16 +25,24 @@
 \maketitle
 
 \begin{abstract}
-Zen3-Embedding produces 7680-dimensional semantic representations optimized for DSO
-(Decentralized Semantic Optimization) retrieval, achieving strong multilingual embedding
-quality across the MTEB benchmark suite while maintaining BitDelta-compatible compression
-for efficient deployment. At 7B parameters, Zen3-Embedding achieves MTEB average 74.3\%,
-BEIR nDCG@10 57.8\%, MIRACL 81.2\%, and retrieval nDCG@10 0.812, surpassing prior
-embedding models with substantially smaller parameter counts. The model supports
-100+ languages through a shared multilingual encoder with language-balanced contrastive
-training, and its 7680-dimensional output space aligns natively with the DSO vector
-index format (ZIP-001), enabling direct integration with decentralized semantic search
-infrastructure without dimension projection overhead.
+Zen3-Embedding is a repackaging of Alibaba's \textbf{Qwen3-Embedding} series, used as the
+first-stage retrieval encoder in Zen retrieval pipelines. It is \emph{not} a from-scratch
+model: it is the openly released, Apache-2.0 licensed \texttt{Qwen/Qwen3-Embedding} family
+(0.6B, 4B, and 8B), produced by the Qwen team and built on the Qwen3 dense foundation
+models~\cite{qwen3embedding}. Qwen3-Embedding is a \emph{causal} (decoder-only) LLM adapted
+for embeddings: an \texttt{[EOS]} token is appended to the input and the final-layer hidden
+state at that position is taken as the embedding. The models accept task instructions on the
+query side, support Matryoshka-style user-defined output dimensions (from 32 up to the model's
+native dimension), span 100+ languages including code, and handle a 32K context. Native
+embedding dimensions are 1024 (0.6B), 2560 (4B), and 4096 (8B). On the Qwen team's evaluation,
+the flagship Qwen3-Embedding-8B reports a Mean(Task) of \textbf{70.58} on the MTEB
+Multilingual (MMTEB) leaderboard --- ranked No.~1 as of 5~June~2025 --- with MTEB English~v2
+Mean(Task) 75.22, C-MTEB Mean(Task) 73.83, and MTEB-Code 80.68~\cite{qwen3embedding}. This
+document describes how the upstream model is wired into Zen retrieval; all weights, training,
+and reported numbers are the Qwen team's and are cited as such. Claims in earlier revisions of
+a bespoke ``7680-dimensional'' bidirectional ``Zen MoDE'' encoder trained for ``Decentralized
+Semantic Optimization,'' with BitDelta index compression, were fabricated and have been
+removed.
 \end{abstract}
 
 \tableofcontents
@@ -57,88 +66,75 @@ applications. Yet most deployed embedding models face a trilemma:
       underperform language-specific models on high-resource languages.
 \end{itemize}
 
-Zen3-Embedding addresses all three through:
+Rather than train an embedding model from scratch, Zen3-Embedding adopts the Qwen3-Embedding
+series~\cite{qwen3embedding}, which targets these trade-offs directly. Our contribution is
+integration and packaging, not modeling. The upstream model provides:
 
 \begin{enumerate}
-\item \textbf{DSO-aligned 7680-dimensional output space} --- The embedding dimension
-      is chosen to match the DSO vector index native format (ZIP-001), eliminating
-      projection overhead and enabling direct P2P semantic search on the decentralized
-      network.
-\item \textbf{Instruction-aware embeddings} --- Following recent instruction-tuned
-      embedding work, Zen3-Embedding accepts task instructions that shift the
-      embedding geometry toward task-optimal representations without additional
-      fine-tuning.
-\item \textbf{BitDelta-compressed index compatibility} --- The 7680-dimensional output
-      is compatible with BitDelta (ZIP-007) 1.58-bit scalar quantization, reducing
-      index storage from 30.7 KB/vector to 1.5 KB/vector with less than 2\% NDCG degradation.
-\item \textbf{Matryoshka representation learning (MRL)} --- Zen3-Embedding supports
-      dimension truncation at 256, 512, 1024, 2048, 3840, and 7680, with each prefix
-      independently optimized for retrieval quality.
+\item \textbf{A spectrum of sizes} --- 0.6B, 4B, and 8B, letting a deployment trade quality
+      against latency and memory.
+\item \textbf{Instruction-aware embeddings} --- The query may be prefixed with a task
+      instruction that steers the representation toward the task, without fine-tuning.
+\item \textbf{Matryoshka output dimensions} --- A single model supports user-defined output
+      dimensions from 32 up to its native dimension, so index storage can be traded against
+      retrieval quality without a separate model.
+\item \textbf{Multilingual and code coverage} --- 100+ languages, including programming
+      languages, with a 32K context.
 \end{enumerate}
+
+We do not modify the Qwen3-Embedding weights; Zen3-Embedding is the upstream model wired into
+the Zen retrieval stack.
 
 %% -----------------------------------------------------------------------
 \section{Architecture}
 \label{sec:arch}
 
-\subsection{Bidirectional Zen MoDE Encoder}
+\subsection{Causal Decoder Adapted for Embeddings}
 
-Unlike the autoregressive Zen family language models, Zen3-Embedding uses a
-bidirectional (BERT-style) encoder architecture built on the Zen MoDE foundation.
-Full bidirectional attention allows each token to contextualize from the entire
-sequence, producing richer representations for embedding tasks than causal attention.
+Qwen3-Embedding is \emph{not} a bidirectional BERT-style encoder and has no
+mixture-of-experts ``Zen MoDE'' backbone. Per the Qwen team~\cite{qwen3embedding}, each model
+is a fine-tune of the corresponding Qwen3-\emph{Base} \emph{dense, causal} (decoder-only) LLM
+(e.g. the 8B from \texttt{Qwen3-8B-Base}, the 0.6B from \texttt{Qwen3-0.6B-Base}). The
+``7.1B-parameter, 48-layer, 64-expert top-4 bidirectional'' specification in earlier revisions
+did not correspond to any deployed weights and has been removed.
 
-Architecture specification:
+Released sizes and native embedding dimensions~\cite{qwen3embedding}:
 \begin{itemize}
-\item 7.1B parameters total (4.8B active per forward pass with MoDE sparsity)
-\item 48 transformer layers, 4096-dimensional hidden state
-\item 32 attention heads, 128-dimensional head size
-\item 64 experts, top-4 active per token
-\item Maximum input sequence length: 32,768 tokens (full attention)
-\item Longer inputs use hierarchical mean-pooling over 32K chunks
+\item Qwen3-Embedding-0.6B: 28 layers, native embedding dimension 1024.
+\item Qwen3-Embedding-4B: 36 layers, native embedding dimension 2560.
+\item Qwen3-Embedding-8B: 36 layers, native embedding dimension 4096.
+\item Context length: 32,768 tokens (all sizes).
 \end{itemize}
 
-\subsection{Embedding Head Design}
+\subsection{Embedding Extraction (Last-Token Pooling)}
 
-The final embedding is produced by a two-component pooling strategy:
-
-\begin{equation}
-\mathbf{e} = \text{LayerNorm}\left(\mathbf{W}_{\text{proj}} \cdot [\mathbf{h}_{\text{CLS}} \;\|\; \bar{\mathbf{h}}_{\text{mean}}]\right)
-\end{equation}
-
-where $\mathbf{h}_{\text{CLS}} \in \mathbb{R}^{4096}$ is the \texttt{[CLS]} token
-hidden state and $\bar{\mathbf{h}}_{\text{mean}} \in \mathbb{R}^{4096}$ is the
-mean-pooled sequence representation. The concatenated 8192-dimensional vector is
-projected to 7680 dimensions via $\mathbf{W}_{\text{proj}} \in \mathbb{R}^{7680 \times 8192}$.
-
-The dual-pooling design is motivated by the complementary nature of CLS (global semantic
-summary) and mean-pooling (compositional token-level semantics): combining both
-outperforms either alone by 1.2--2.4 points on MTEB retrieval tasks.
-
-\subsection{Matryoshka Representation Learning}
-
-MRL~\cite{mrl} enables dimension-adaptive embeddings by training the model to
-produce high-quality representations at all prefixes simultaneously:
+The embedding is the final-layer hidden state at an appended \texttt{[EOS]}
+token~\cite{qwen3embedding}. Because attention is causal, that last position has attended over
+the entire input, so its hidden state serves as the sequence representation:
 
 \begin{equation}
-\mathcal{L}_{\text{MRL}} = \sum_{d \in \mathcal{D}} w_d \cdot \mathcal{L}_{\text{contrastive}}\left(\mathbf{e}_{:d}, \mathbf{e}^+_{:d}, \{\mathbf{e}^-_i\}_{:d}\right)
+\mathbf{e} = \mathbf{h}^{(L)}_{\texttt{[EOS]}} \in \mathbb{R}^{d_{\text{model}}},
 \end{equation}
 
-where $\mathcal{D} = \{256, 512, 1024, 2048, 3840, 7680\}$ are the supported
-truncation dimensions and $w_d$ is a dimension weight (larger dimensions receive
-higher weight since they have more capacity and are the primary deployment target).
+where $d_{\text{model}}$ is the model's native dimension (1024 / 2560 / 4096). There is no
+\texttt{[CLS]} token, no mean$+$CLS dual pooling, and no learned projection to a 7680-dim
+space; those constructions in earlier revisions were fabricated.
 
-\subsection{DSO Vector Index Alignment}
+\subsection{Matryoshka Output Dimensions}
 
-The DSO protocol (ZIP-001) specifies a 7680-dimensional float32 native embedding
-format for peer-to-peer semantic search nodes. Zen3-Embedding outputs are directly
-compatible without projection, enabling:
+Qwen3-Embedding supports user-defined output dimensions from 32 up to the native
+dimension~\cite{qwen3embedding,mrl}, so a shorter prefix of the embedding can be used to
+shrink index storage at a modest quality cost. The supported range is continuous (32 to
+$d_{\text{model}}$), not the fixed ladder $\{256,\dots,7680\}$ asserted in earlier revisions.
 
-\begin{itemize}
-\item Plug-in replacement for DSO network nodes
-\item Direct HNSW index construction from model output
-\item BitDelta scalar quantization (ZIP-007) to 1.58-bit per dimension
-\item Cross-node cosine similarity computation without format conversion
-\end{itemize}
+\subsection{Use in the Zen Retrieval Stack}
+
+Zen indexing computes Qwen3-Embedding vectors for documents (no instruction) and builds a
+standard vector index (e.g. HNSW) over them; at query time the query embedding (optionally
+with a task instruction) is used for similarity search, and the Qwen3-Reranker stage
+re-scores the shortlist. The ``DSO-native 7680-dim format,'' ``BitDelta 1.58-bit index
+compression,'' and ``peer-to-peer node'' descriptions of earlier revisions did not describe
+this model and have been removed.
 
 \subsection{Instruction-Aware Embedding}
 
@@ -164,159 +160,89 @@ Instructions are applied to queries only (not documents), preserving document in
 \section{Training}
 \label{sec:training}
 
-\subsection{Pre-Training}
+\subsection{Provenance, Not Training}
 
-Zen3-Embedding is initialized from the Zen3-Small (7B) base language model, then
-adapted to bidirectional attention by:
-\begin{enumerate}
-\item Removing the causal attention mask
-\item Adding \texttt{[CLS]} and \texttt{[SEP]} special tokens to the vocabulary
-\item Continued pre-training on masked language modeling (MLM) for 100B tokens
-\item Learning rate: $1 \times 10^{-5}$, warm-up 5\%, cosine decay
-\end{enumerate}
+Zen3-Embedding performs no training of its own. The models were trained by the Qwen team; we
+summarize their published approach at a high level and attribute it
+accordingly~\cite{qwen3embedding}.
 
-\subsection{Contrastive Training Data}
-
-The contrastive training corpus contains 2.1B positive (query, document) pairs:
-
-\begin{itemize}
-\item Web search query-document pairs (mined from search logs): 800M
-\item Academic paper abstract-body pairs: 120M
-\item Question-answer pairs (StackExchange, community QA): 180M
-\item Multilingual parallel corpora (translation pairs as positives): 400M
-\item Code documentation pairs (function signature + docstring): 90M
-\item Synthetic pairs generated by Zen3-Medium (for hard positives): 250M
-\item Curated high-quality pairs (human-annotated): 260M
-\end{itemize}
-
-Hard negatives are mined using BM25 top-100 retrieval followed by reranking with
-a lightweight cross-encoder to select negatives that are lexically similar but
-semantically distinct (``hard BM25 negatives'').
-
-\subsection{Contrastive Learning Objective}
-
-Training uses InfoNCE loss with in-batch negatives plus 8 mined hard negatives per query:
+Per the Qwen team, Qwen3-Embedding starts from the Qwen3-Base dense LLMs and is adapted to
+embeddings with a contrastive objective (the standard last-token / \texttt{[EOS]}
+representation with an InfoNCE-style loss over positive (query, document) pairs and
+negatives), with the Qwen3 generative models used to synthesize a large, multilingual portion
+of the training pairs~\cite{qwen3embedding}. The contrastive loss has the usual form
 
 \begin{equation}
-\mathcal{L}_{\text{InfoNCE}} = -\log \frac{\exp(\text{sim}(\mathbf{q}, \mathbf{d}^+) / \tau)}{\exp(\text{sim}(\mathbf{q}, \mathbf{d}^+) / \tau) + \sum_{j=1}^{N} \exp(\text{sim}(\mathbf{q}, \mathbf{d}^-_j) / \tau)}
+\mathcal{L}_{\text{InfoNCE}} = -\log \frac{\exp(\text{sim}(\mathbf{q}, \mathbf{d}^+) / \tau)}{\exp(\text{sim}(\mathbf{q}, \mathbf{d}^+) / \tau) + \sum_{j} \exp(\text{sim}(\mathbf{q}, \mathbf{d}^-_j) / \tau)},
 \end{equation}
 
-where $\text{sim}(\cdot, \cdot)$ is cosine similarity, $\tau = 0.02$ is the
-temperature, $N = 8 + B - 1$ is the total number of negatives ($B$ is batch size,
-8 mined hard negatives per sample).
+with $\text{sim}(\cdot,\cdot)$ cosine similarity. For the authoritative dataset composition,
+synthetic-data pipeline, and hyperparameters, see the Qwen team's report~\cite{qwen3embedding}.
 
-GradCache~\cite{gradcache} is used to enable batch sizes of 32,768 without requiring
-proportional GPU memory, by accumulating gradients from sub-batches.
-
-\subsection{Multilingual Training}
-
-Language-balanced sampling ensures no language dominates training:
-
-\begin{itemize}
-\item High-resource languages (EN, ZH, ES, FR, DE, JA, KO, RU, AR, PT): 35\% total
-\item Mid-resource languages (50 languages): 45\% total
-\item Low-resource languages (50+ languages): 20\% total
-\end{itemize}
-
-Cross-lingual positive pairs (same meaning, different languages) are sampled at 25\%
-of training data, training the model to produce language-agnostic representations.
+The fabricated training details in earlier revisions --- ``bidirectional MLM adaptation,'' a
+2.1B-pair corpus with specific per-source counts, a synthetic generator named
+``Zen3-Medium,'' and a 32{,}768 GradCache batch --- did not describe any real training run
+and have been removed.
 
 %% -----------------------------------------------------------------------
 \section{Evaluation}
 \label{sec:eval}
 
-\subsection{MTEB Overview}
+All numbers in this section are the Qwen team's published results for
+Qwen3-Embedding~\cite{qwen3embedding}, reproduced here with attribution. We ran no evaluations
+of our own and make no independent benchmark claims.
+
+\subsection{Flagship (8B) Headline Numbers}
 
 \begin{table}[H]
 \centering
-\caption{MTEB benchmark performance by task category}
-\begin{tabular}{lccc}
+\caption{Qwen3-Embedding-8B, as reported by the Qwen team~\cite{qwen3embedding}. The MMTEB
+Mean(Task) of 70.58 ranked No.~1 on the MTEB Multilingual leaderboard as of 5~June~2025.}
+\begin{tabular}{lc}
 \toprule
-\textbf{Task Category} & \textbf{Zen3-Embedding} & \textbf{Zen2-Embedding} & \textbf{Tasks} \\
+\textbf{Benchmark} & \textbf{Score} \\
 \midrule
-Retrieval          & 57.8 & 53.1 & 15 \\
-Semantic Similarity & 87.4 & 84.2 & 10 \\
-Reranking          & 59.3 & 55.8 & 4  \\
-Classification     & 78.6 & 74.9 & 12 \\
-Clustering         & 51.2 & 47.4 & 11 \\
-Pair Classification & 86.9 & 83.1 & 3  \\
-Summarization      & 30.4 & 28.7 & 1  \\
-\textbf{MTEB Average} & \textbf{74.3} & \textbf{70.1} & 56 \\
+MTEB Multilingual (MMTEB), Mean(Task) & 70.58 \\
+MTEB Multilingual (MMTEB), Mean(Type) & 61.69 \\
+MTEB English v2, Mean(Task)           & 75.22 \\
+MTEB English v2, Mean(Type)           & 68.70 \\
+C-MTEB (Chinese), Mean(Task)          & 73.83 \\
+MTEB-Code (nDCG@10)                   & 80.68 \\
 \bottomrule
 \end{tabular}
-\label{tab:mteb}
+\label{tab:qwen3emb-8b}
 \end{table}
 
-\subsection{BEIR Retrieval}
+\subsection{Across Model Sizes}
 
 \begin{table}[H]
 \centering
-\caption{BEIR retrieval benchmark (nDCG@10)}
+\caption{Released sizes and native embedding dimensions~\cite{qwen3embedding}. The 8B is the
+flagship; the Qwen team's report gives the full MMTEB breakdown for each size, with quality
+increasing with size.}
 \begin{tabular}{lcc}
 \toprule
-\textbf{Dataset} & \textbf{Zen3-Embedding} & \textbf{Zen2-Embedding} \\
+\textbf{Model} & \textbf{Layers} & \textbf{Native dim} \\
 \midrule
-MSMARCO         & 41.2 & 38.4 \\
-TREC-COVID      & 77.4 & 72.1 \\
-NFCorpus        & 36.8 & 33.9 \\
-NQ              & 52.3 & 48.7 \\
-HotpotQA        & 68.9 & 64.2 \\
-FEVER           & 78.1 & 73.4 \\
-SCIDOCS         & 19.4 & 17.8 \\
-SciFact         & 73.2 & 69.4 \\
-Quora           & 88.4 & 85.1 \\
-DBPedia         & 41.7 & 38.2 \\
-\textbf{BEIR Average} & \textbf{57.8} & \textbf{54.1} \\
+Qwen3-Embedding-0.6B & 28 & 1024 \\
+Qwen3-Embedding-4B   & 36 & 2560 \\
+Qwen3-Embedding-8B   & 36 & 4096 \\
 \bottomrule
 \end{tabular}
-\label{tab:beir}
+\label{tab:qwen3emb-sizes}
 \end{table}
 
-\subsection{Multilingual Retrieval}
+The 8B MMTEB Mean(Task) of 70.58 is given above; per-size MMTEB/MTEB scores for the 0.6B and
+4B models are reported in the Qwen team's paper and we refer the reader there rather than
+restating numbers we have not independently verified~\cite{qwen3embedding}.
 
-\begin{table}[H]
-\centering
-\caption{MIRACL multilingual retrieval (nDCG@10)}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Language} & \textbf{Zen3-Embedding} & \textbf{Zen2-Embedding} \\
-\midrule
-English (EN)   & 87.3 & 83.4 \\
-Chinese (ZH)   & 82.1 & 77.8 \\
-Arabic (AR)    & 78.9 & 73.1 \\
-Spanish (ES)   & 84.2 & 80.6 \\
-Japanese (JA)  & 79.4 & 74.2 \\
-Korean (KO)    & 81.3 & 76.9 \\
-Russian (RU)   & 79.8 & 75.1 \\
-French (FR)    & 83.7 & 79.4 \\
-German (DE)    & 82.4 & 78.2 \\
-Swahili (SW)   & 72.4 & 64.3 \\
-\textbf{Average (18 langs)} & \textbf{81.2} & \textbf{76.4} \\
-\bottomrule
-\end{tabular}
-\label{tab:miracl}
-\end{table}
+\subsection{A Note on Earlier Revisions}
 
-\subsection{Matryoshka Dimension Truncation}
-
-\begin{table}[H]
-\centering
-\caption{MTEB average score vs. embedding dimension (MRL truncation)}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Dimension} & \textbf{MTEB Average} & \textbf{Storage per Vector (KB)} \\
-\midrule
-256   & 68.2 & 1.0  \\
-512   & 70.4 & 2.0  \\
-1024  & 71.9 & 4.0  \\
-2048  & 73.1 & 8.0  \\
-3840  & 73.9 & 15.0 \\
-7680  & 74.3 & 30.0 \\
-\textbf{7680 + BitDelta} & \textbf{72.8} & \textbf{1.5} \\
-\bottomrule
-\end{tabular}
-\label{tab:matryoshka}
-\end{table}
+Earlier revisions of this document reported a fabricated ``MTEB average 74.3,'' a ``Zen2-Embedding''
+comparison column, BEIR/MIRACL tables, and a Matryoshka/BitDelta storage table at 7680
+dimensions. None of those described this model or any real measurement; they were fabricated
+and have been removed. For per-task and per-dataset breakdowns of the genuine numbers, see the
+Qwen team's report and the HuggingFace model cards~\cite{qwen3embedding}.
 
 %% -----------------------------------------------------------------------
 \section{Related Work}
@@ -325,10 +251,9 @@ Swahili (SW)   & 72.4 & 64.3 \\
 \subsection{Dense Retrieval}
 
 Dense passage retrieval~\cite{karpukhin2020dense} established bi-encoder architectures
-as practical alternatives to BM25 for open-domain question answering. Subsequent
-scaling work demonstrated that larger encoders consistently improve retrieval quality.
-Zen3-Embedding scales to 7B parameters while maintaining production-practical latency
-through the MoDE sparse activation pattern (4.8B active parameters per forward pass).
+as practical alternatives to BM25 for open-domain question answering. Qwen3-Embedding sits in
+the more recent line of repurposing decoder-only LLMs as embedding models via last-token
+pooling and contrastive fine-tuning~\cite{qwen3embedding}.
 
 \subsection{Contrastive Learning for Embeddings}
 
@@ -336,32 +261,36 @@ SimCSE~\cite{gao2021simcse} demonstrated that contrastive learning with dropout 
 data augmentation substantially improves semantic textual similarity. E5~\cite{wang2022e5}
 and subsequent work showed that web-scale weakly supervised contrastive training
 with curated hard negatives matches or exceeds expensive human-annotated pairs.
-Zen3-Embedding synthesizes these insights at 7B scale.
+Qwen3-Embedding follows this contrastive-fine-tuning paradigm on top of the Qwen3 base
+LLMs~\cite{qwen3embedding}.
 
 \subsection{Matryoshka Representations}
 
 Matryoshka Representation Learning~\cite{mrl} enables flexible dimension truncation
-with minimal quality loss, supporting diverse downstream deployment constraints.
-Zen3-Embedding is the first 7B-scale model to implement full MRL across 6 dimensions.
+with minimal quality loss; Qwen3-Embedding exposes this as user-selectable output dimensions
+from 32 up to each model's native dimension~\cite{qwen3embedding}.
 
 %% -----------------------------------------------------------------------
 \section{Conclusion}
 \label{sec:conclusion}
 
-Zen3-Embedding delivers frontier retrieval quality at 7B scale with native DSO
-protocol compatibility, achieving MTEB 74.3\%, BEIR 57.8\%, and MIRACL 81.2\%.
-The 7680-dimensional embedding space, Matryoshka truncation support, BitDelta
-index compression, and instruction-aware embedding collectively address the quality,
-efficiency, and deployment flexibility requirements of production semantic search systems.
+Zen3-Embedding is the first-stage retrieval encoder of Zen retrieval pipelines, implemented as
+a direct deployment of Alibaba's Apache-2.0 Qwen3-Embedding models
+(0.6B/4B/8B)~\cite{qwen3embedding}. Qwen3-Embedding is a causal decoder LLM adapted for
+embeddings via last-token (\texttt{[EOS]}) pooling, with instruction-aware queries, Matryoshka
+output dimensions, 100+ language coverage, and a 32K context. The flagship 8B reports an MMTEB
+Mean(Task) of 70.58 (No.~1 as of 5~June~2025) per the Qwen team. We contribute integration into
+the Zen retrieval stack, not a new model, and we report the Qwen team's published numbers with
+attribution rather than benchmarks of our own. The ``DSO-native 7680-dimensional Zen MoDE
+encoder'' and ``BitDelta index compression'' claims of earlier revisions have been removed as
+fabrications.
 
-Integration with the DSO network (ZIP-001) enables decentralized semantic search
-at scale without centralized index infrastructure, a capability unique to the
-Zen family embedding ecosystem.
+\section*{Acknowledgments and Attribution}
 
-\section*{Acknowledgments}
-
-The authors thank Zoo Labs Foundation for DSO network integration support and
-MTEB benchmark evaluation infrastructure.
+Zen3-Embedding is built entirely on Qwen3-Embedding (\texttt{Qwen/Qwen3-Embedding},
+Apache-2.0), developed by the Qwen team at Alibaba; all model weights, training, and reported
+metrics are theirs. We thank the Qwen team for releasing the models openly and the MTEB/MMTEB
+maintainers for the evaluation suites.
 
 \bibliographystyle{plain}
 \begin{thebibliography}{9}
@@ -386,20 +315,12 @@ A. Kusupati et al.,
 ``Matryoshka Representation Learning,''
 \textit{NeurIPS}, 2022.
 
-\bibitem{gradcache}
-L. Gao, J. Callan,
-``Scaling Deep Contrastive Learning Batch Size under Memory Limited Setup,''
-\textit{RepL4NLP Workshop}, 2021.
-
-\bibitem{zip001}
-Zoo Labs Foundation,
-``ZIP-001: Decentralized Semantic Optimization (DSO),''
-\textit{Zoo Improvement Proposals}, 2024.
-
-\bibitem{zip007}
-Zoo Labs Foundation,
-``ZIP-007: BitDelta --- Quantization-Aware Delta Compression for Language Models,''
-\textit{Zoo Improvement Proposals}, 2024.
+\bibitem{qwen3embedding}
+Y. Zhang, M. Li, D. Long, X. Zhang, H. Lin, B. Yang, P. Xie, A. Yang, D. Liu, J. Lin,
+F. Huang, J. Zhou (Qwen Team, Alibaba),
+``Qwen3 Embedding: Advancing Text Embedding and Reranking Through Foundation Models,''
+\textit{arXiv:2506.05176}, 2025.
+Models: \texttt{Qwen/Qwen3-Embedding-\{0.6B,4B,8B\}} (Apache-2.0).
 
 \end{thebibliography}
 

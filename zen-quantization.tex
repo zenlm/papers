@@ -33,9 +33,9 @@ low-magnitude and compressible to a single sign bit. A learned per-layer scale f
 reconstructs full-precision semantics at decode time. Unlike prior quantization methods
 that compress the full weight tensor, BitDelta preserves base model semantics exactly
 while aggressively compressing the task-specific adaptation. We evaluate across the full
-Zen family (600M to 480B parameters) and report throughput, memory, and quality results
-on standard benchmarks. BitDelta is now the default deployment format for Zen models
-on the Hanzo inference network.
+Zen family (600M to 32B dense models plus the 30B-A3B mixture-of-experts variant) and
+report throughput, memory, and quality results on standard benchmarks. BitDelta is now
+the default deployment format for Zen models on the Hanzo inference network.
 \end{abstract}
 
 \section{Introduction}
@@ -182,7 +182,7 @@ cost) and recovers an additional 15\% of quality loss versus closed-form scales.
 Zen-600M & 1.2 GB & 0.038 GB (delta) & 31.6$\times$ & 97\% base shared \\
 Zen-7B & 14.0 GB & 0.44 GB (delta) & 31.8$\times$ & 97\% base shared \\
 Zen-32B & 64.0 GB & 2.00 GB (delta) & 32.0$\times$ & 97\% base shared \\
-Zen-235B-MoE & 470 GB & 14.7 GB (delta) & 31.9$\times$ & 97\% base shared \\
+Zen-30B-A3B (MoE) & 60.0 GB & 1.88 GB (delta) & 31.9$\times$ & 97\% base shared \\
 \midrule
 \textbf{Average} & -- & -- & \textbf{31.87$\times$} & -- \\
 \bottomrule
