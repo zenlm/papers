@@ -33,7 +33,7 @@
     \vspace{0.5cm}
     \Huge \textbf{Zen-Musician} \\
     \vspace{0.3cm}
-    \large AI Music Composition, MIDI Generation, and Audio Synthesis \\
+    \large Packaging YuE for Long-Form Lyrics-to-Song Generation in the Zen Stack \\
     \vspace{0.5cm}
     \normalsize Technical Report v2025.01
 }
@@ -50,18 +50,28 @@
 \maketitle
 
 \begin{abstract}
-We present \textbf{Zen-Musician}, a 3-billion parameter generative music model capable of
-multi-genre composition, MIDI generation, audio synthesis, and real-time accompaniment.
-Zen-Musician unifies symbolic music representation (MIDI) and acoustic audio generation
-within a single model, enabling coherent compositions that span from high-level structural
-planning (chord progressions, song sections, orchestration) to low-level acoustic rendering
-(instrument timbre, expression, dynamics). Trained on 180,000 hours of licensed music spanning
-40 genres, the model achieves a Frechet Audio Distance (FAD) score of 2.3 (compared to 1.8
-for human composers in identical conditions), earns a Music Opinion Score (MOS) of 4.1/5.0,
-and generates 30-second compositions in under 4 seconds on an A10G GPU. A novel
-\textbf{Section-Aware Transformer (SAT)} architecture enforces long-range musical structure
-(verse/chorus/bridge coherence) that pure autoregressive models lack. Zen-Musician supports
-real-time accompaniment generation, adaptive score following, and style transfer across genres.
+\textbf{Zen-Musician} is a packaging and integration of \textbf{YuE}, the open
+long-form music generation foundation model developed by \textbf{M-A-P
+(Multimodal Art Projection)} and HKUST and released under the permissive
+\textbf{Apache-2.0} license \cite{yuan2025yue,yuehf}. We make no claim of a
+from-scratch model: Zen-Musician redistributes YuE's published weights
+unmodified and exposes them through the Zen tooling, runtime, and API surface.
+This report documents the \emph{real} architecture so that integrators understand
+what they are deploying. YuE is a lyrics-to-song system: given lyrics together
+with a short genre/style description, it generates full songs containing both
+sung vocals and accompaniment. It is built on a decoder-only LLaMA-2-style
+autoregressive transformer that operates over discrete audio tokens. The flagship
+Stage-1 checkpoint (e.g. \texttt{m-a-p/YuE-s1-7B-anneal-en-cot}) has
+approximately 7B parameters and performs track-decoupled next-token prediction to
+produce vocal and accompaniment token streams; a separate Stage-2 model
+(approximately 1B parameters) refines and upsamples those tokens toward the final
+waveform \cite{yuegh}. According to its authors, YuE can generate up to roughly
+five minutes of music while maintaining lyrical alignment, coherent musical
+structure, and vocal melodies with appropriate accompaniment, and supports style
+transfer and reference conditioning through an in-context-learning (ICL) variant
+\cite{yuan2025yue}. This document supersedes an earlier draft that incorrectly
+described a from-scratch ``Zen MoDE'' architecture and reported fabricated
+benchmarks; those claims were false and have been removed.
 \end{abstract}
 
 \tableofcontents
@@ -69,23 +79,51 @@ real-time accompaniment generation, adaptive score following, and style transfer
 
 \section{Introduction}
 
-Music generation has seen rapid progress, yet existing models suffer from two persistent failure
-modes. \textbf{Structural incoherence}: autoregressive models generate locally plausible music
-that lacks the large-scale structure (repetition, contrast, development) that defines
-professional composition. \textbf{Modality gap}: separate symbolic and acoustic models require
-clumsy pipelines (MIDI $\to$ synthesis) that break acoustic coherence.
+\subsection{What Zen-Musician Is (and Is Not)}
 
-Zen-Musician resolves both through:
+Zen-Musician is the Zen stack's integration of \textbf{YuE}
+(\href{https://github.com/multimodal-art-projection/YuE}{multimodal-art-projection/YuE}),
+an open foundation model for full-song generation released by M-A-P and HKUST
+under the \textbf{Apache-2.0} license \cite{yuehf,yuan2025yue}. The Apache-2.0
+license permits redistribution, modification, and commercial use subject to its
+attribution and notice requirements; YuE's authors explicitly encourage creators
+to incorporate model outputs, with attribution to ``YuE by HKUST/M-A-P''
+recommended \cite{yuehf}.
 
-\begin{enumerate}
-    \item \textbf{Section-Aware Transformer (SAT)}: A hierarchical attention architecture that
-    maintains a global structural plan (verse, chorus, bridge, solo) and conditions local
-    generation on the current section's role in the overall form.
-    \item \textbf{Unified token space}: MIDI events and audio codec tokens share a single
-    vocabulary, enabling the model to interleave symbolic and acoustic generation.
-    \item \textbf{Multi-genre training}: 180,000 hours of licensed music spanning 40 genres
-    with rich metadata (key, tempo, mood, instrumentation).
-\end{enumerate}
+To be explicit about provenance:
+
+\begin{itemize}
+    \item Zen-Musician \textbf{does not} introduce a new architecture. There is
+    no ``Zen MoDE,'' no ``Section-Aware Transformer,'' and no unified
+    MIDI/audio model. Those concepts appeared in a prior draft of this report and
+    were not real.
+    \item Zen-Musician \textbf{does not} report its own benchmark numbers. The FAD,
+    MOS, genre-consistency, structure-F1, and accompaniment-latency tables in the
+    earlier draft were fabricated and have been deleted. Where this report
+    mentions evaluation, it attributes claims to YuE's authors and does not invent
+    metrics.
+    \item Zen-Musician \textbf{is} a redistribution of YuE's published weights,
+    wrapped with Zen tooling (a consistent loader, runtime integration, and the
+    Zen API surface) so that YuE can be used alongside other Zen models.
+\end{itemize}
+
+\subsection{Correcting the README}
+
+A previous Zen-Musician description listed the model as ``1B'' parameters and as a
+MIDI/symbolic system. Both were wrong. The packaged flagship is the
+\textbf{7B Stage-1} checkpoint; the ``1B'' figure corresponds only to the
+\emph{Stage-2} refinement/upsampling model, not the main generator. YuE generates
+\emph{audio} (sung vocals plus accompaniment) from \emph{lyrics and genre text}.
+It is not a MIDI model and does not generate symbolic scores.
+
+\subsection{The Problem YuE Addresses}
+
+Open music models have historically struggled with \emph{long-form} generation:
+producing a coherent multi-minute song with intelligible, aligned lyrics, a
+sensible verse/chorus structure, and a singing voice that stays on top of a
+suitable accompaniment. YuE targets this lyrics-to-song setting directly, scaling
+an autoregressive transformer over audio tokens to song-length outputs
+\cite{yuan2025yue}.
 
 \subsection{Model Overview}
 
@@ -95,286 +133,190 @@ Zen-Musician resolves both through:
 \toprule
 \textbf{Property} & \textbf{Value} \\
 \midrule
-Parameters & 3B \\
-Architecture & Section-Aware Transformer (SAT) \\
-Token Vocabulary & 32,768 (MIDI events + Encodec audio tokens) \\
-Context Length & 30K tokens ($\approx$2 min of music) \\
-Genres & 40 (classical, jazz, pop, EDM, folk, metal, + 34 more) \\
-Max Generation Length & 10 minutes continuous \\
-Training Data & 180,000 hours licensed music \\
+Upstream model & YuE (M-A-P / HKUST) \\
+License & Apache-2.0 \cite{yuehf} \\
+Task & Lyrics + genre $\rightarrow$ full song (vocals + accompaniment) \\
+Backbone & Decoder-only, LLaMA-2-style autoregressive transformer \cite{yuan2025yue,touvron2023llama2} \\
+Stage-1 generator & $\approx$7B parameters (e.g. \texttt{YuE-s1-7B-anneal-en-cot}) \\
+Stage-2 refiner & $\approx$1B parameters (token refinement / upsampling) \\
+Representation & Discrete audio tokens (xcodec-style tokenizer) \\
+Languages & English, Mandarin, Cantonese, Japanese, Korean (checkpoint-specific) \\
+Conditioning & Lyrics with section tags; genre/style tags; optional audio reference (ICL) \\
+Reported length & Up to $\approx$5 minutes of music \cite{yuan2025yue} \\
 \bottomrule
 \end{tabular}
-\caption{Zen-Musician Model Specifications}
+\caption{Zen-Musician = packaged YuE: upstream specifications}
 \end{table}
 
-\section{Architecture}
+\section{Architecture (as published by YuE's authors)}
 
-\subsection{Unified Token Space}
+The description below summarizes YuE's design from its paper and model
+documentation \cite{yuan2025yue,yuehf,yuegh}. Zen-Musician does not alter this
+architecture.
 
-Zen-Musician's key architectural decision is a unified vocabulary covering both symbolic music
-and acoustic audio:
+\subsection{Audio Tokenization}
 
-\textbf{MIDI tokens} (4,096 tokens): Representing note-on, note-off, velocity, program change,
-tempo, and time shift events at 5ms resolution.
+YuE operates over \emph{discrete audio tokens} rather than raw waveforms. Audio is
+encoded into token sequences by an xcodec-style neural audio codec; the language
+model predicts tokens, and the decoder side reconstructs audio from them
+\cite{yuehf}. This lets a standard autoregressive transformer model music the same
+way a text LLM models language.
 
-\textbf{Audio tokens} (28,672 tokens): Encodec \cite{defossez2022encodec} codes at 24kHz with
-4 codebooks at 75Hz frame rate, providing compact acoustic representation.
+\subsection{Stage-1: LLaMA-2-style Autoregressive Generator}
 
-\textbf{Structural tokens} (128 tokens): Section markers (VERSE, CHORUS, BRIDGE, INTRO,
-OUTRO, SOLO, BREAKDOWN) and metadata (KEY, TEMPO, GENRE, INSTRUMENT).
+The Stage-1 model is a \textbf{decoder-only, LLaMA-2-style transformer}
+\cite{yuan2025yue,touvron2023llama2} with approximately \textbf{7B parameters}.
+Its central design choice, as described by the authors, is \textbf{track-decoupled
+(``dual-track'') next-token prediction}: rather than modeling a single dense
+mixture signal, it predicts \emph{vocal} and \emph{accompaniment} token streams in
+a decoupled fashion, which the authors report helps the model keep the singing
+voice coherent over long contexts \cite{yuan2025yue}. The authors further describe
+\emph{structural progressive conditioning} to maintain lyric alignment across
+long-form generation \cite{yuan2025yue}.
 
-The model learns to transition fluidly between MIDI and audio modalities, using MIDI for
-structural planning and audio tokens for acoustic detail within each section.
+\subsection{Stage-2: Refinement / Upsampling}
 
-\subsection{Section-Aware Transformer}
+A separate \textbf{Stage-2} model (approximately \textbf{1B parameters}) takes the
+Stage-1 token output and performs residual refinement / upsampling toward the
+final audio, improving fidelity before waveform reconstruction \cite{yuegh,yuehf}.
+This is the source of the ``1B'' figure that an earlier Zen description mistook for
+the size of the whole system.
 
-The SAT adds a \textbf{structural level} atop the token-level transformer:
+\subsection{Conditioning Interface}
+
+YuE is prompted with three kinds of input \cite{yuehf}:
 
 \begin{itemize}
-    \item A \textbf{Structure Encoder} (4 transformer layers) processes a sequence of section
-    descriptors $(s_1, s_2, \ldots, s_K)$ representing the planned song form.
-    \item A \textbf{Section Embedding} is computed for each section and injected into token-level
-    generation via cross-attention at every fourth transformer layer.
-    \item During generation, the model can dynamically revise the structural plan based on
-    what has been generated, enabling coherent improvisation.
+    \item \textbf{Genre / style tags}: a short free-text description (the project
+    suggests including genre, instrumentation, mood, vocal gender, and timbre).
+    \item \textbf{Lyrics}: the song's lyrics, annotated with structural labels such
+    as \texttt{[verse]} and \texttt{[chorus]}, organized into sessions/segments.
+    \item \textbf{Optional audio reference} (ICL variants): a reference clip used
+    for style transfer or voice-style conditioning via in-context learning
+    \cite{yuan2025yue}.
 \end{itemize}
 
-Formally, at each generation step $t$ within section $k$:
+\subsection{Checkpoint Family}
 
-\begin{equation}
-    h_t = \text{TransformerLayer}(h_{t-1}, \text{CrossAttn}(h_{t-1}, E_k))
-\end{equation}
+YuE ships multiple Stage-1 checkpoints, differentiated by language coverage and by
+mode --- a chain-of-thought (\texttt{cot}) variant and an in-context-learning
+(\texttt{icl}) variant for reference-conditioned generation \cite{yuehf}. Example
+flagship checkpoint: \texttt{m-a-p/YuE-s1-7B-anneal-en-cot}.
 
-where $E_k = \text{StructureEncoder}(s_k)$ is the section embedding.
+\section{Capabilities Reported Upstream}
 
-\subsection{Accompaniment Mode}
+The following are claims made by YuE's authors \cite{yuan2025yue}; Zen-Musician
+inherits them by redistributing the same weights and does not independently
+re-benchmark them in this report.
 
-In accompaniment mode, the model conditions on an input melody (provided as MIDI or audio)
-and generates harmonically and rhythmically coherent accompaniment. The melody is encoded
-via a lightweight 2-layer transformer and injected as an additional conditioning signal
-alongside the section embedding. Accompaniment latency is 120ms (suitable for real-time
-performance with modest lookahead).
+\begin{itemize}
+    \item \textbf{Long-form songs}: generation of up to roughly five minutes of
+    music with maintained lyrical alignment and coherent musical structure.
+    \item \textbf{Vocals with accompaniment}: engaging vocal melodies sung over an
+    appropriate instrumental backing, produced by the dual-track scheme.
+    \item \textbf{Style transfer / reference conditioning}: an in-context-learning
+    mode enabling style transfer (e.g. genre conversion while preserving
+    accompaniment) and reference-based generation.
+    \item \textbf{Multilingual coverage}: checkpoints for English, Mandarin,
+    Cantonese, Japanese, and Korean.
+\end{itemize}
 
-\section{Training}
+The YuE paper reports that the system ``matches or even surpasses some of the
+proprietary systems in musicality and vocal agility,'' and evaluates music
+\emph{understanding} on the MARBLE benchmark \cite{yuan2025yue}. We reproduce this
+as an attributed upstream claim only; no numeric scores are asserted here, and
+none should be attributed to Zen.
 
-\subsection{Dataset}
+\section{Integration in the Zen Stack}
 
-\begin{table}[H]
-\centering
-\begin{tabular}{lrrl}
-\toprule
-\textbf{Source} & \textbf{Hours} & \textbf{Proportion} & \textbf{Licensing} \\
-\midrule
-Licensed studio recordings & 80,000 & 44.4\% & Commercial license \\
-Classical MIDI corpus & 12,000 & 6.7\% & Public domain \\
-Jazz Real Book corpus & 8,000 & 4.4\% & Licensed \\
-Folk music archives & 15,000 & 8.3\% & Creative Commons \\
-Electronic music library & 25,000 & 13.9\% & Commercial license \\
-Synthetic augmentation & 40,000 & 22.2\% & Generated \\
-\midrule
-\textbf{Total} & \textbf{180,000} & 100\% & \\
-\bottomrule
-\end{tabular}
-\caption{Zen-Musician Training Data}
-\end{table}
+Zen-Musician's contribution is purely \textbf{packaging and integration}, not
+modeling:
 
-\subsection{Training Protocol}
+\begin{itemize}
+    \item \textbf{Distribution}: the YuE Stage-1 and Stage-2 weights are
+    redistributed under Apache-2.0 with upstream attribution and license/notice
+    files preserved.
+    \item \textbf{Loader and runtime}: a consistent entry point so YuE can be
+    invoked the same way as other Zen models.
+    \item \textbf{API surface}: a thin wrapper exposing YuE's lyrics+genre
+    conditioning and two-stage pipeline.
+\end{itemize}
 
-\textbf{Stage 1 -- Audio codec training} (50K steps): Encodec-based audio codec is trained
-on the full audio corpus. Codebook utilization target $>$95\%.
+\subsection{Resource Notes}
 
-\textbf{Stage 2 -- Symbolic pretraining} (100K steps): Token-level transformer is pretrained
-on MIDI token sequences with masked token prediction.
+YuE is a 7B-class generator over long audio-token contexts; full-song generation
+is GPU-memory intensive, and the upstream project documents substantial VRAM
+requirements for long outputs as well as multi-stage (Stage-1 then Stage-2)
+inference \cite{yuehf}. Integrators should budget accordingly rather than expecting
+real-time, low-memory operation.
 
-\textbf{Stage 3 -- Joint pretraining} (150K steps): Training on the full unified token space
-(MIDI + audio) with next-token prediction.
+\section{Usage}
 
-\textbf{Stage 4 -- Structural fine-tuning} (50K steps): SAT structural components are trained
-with section-boundary supervision from annotated music datasets.
+The snippet below is illustrative of the lyrics-to-song interface. Refer to the
+upstream YuE repository \cite{yuegh} for the authoritative inference pipeline,
+prompt format, and Stage-1/Stage-2 invocation.
 
-\textbf{Stage 5 -- RLHF from musicians} (20K steps): Reward model trained on 30,000 pairwise
-comparisons from professional musicians, optimized via PPO.
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lllll}
-\toprule
-\textbf{Stage} & \textbf{Steps} & \textbf{Batch} & \textbf{LR} & \textbf{Hardware} \\
-\midrule
-Codec & 50K & 256 & 1e-4 & 8$\times$A100 \\
-Symbolic & 100K & 128 & 3e-4 & 16$\times$A100 \\
-Joint & 150K & 64 & 2e-4 & 32$\times$A100 \\
-Structural & 50K & 64 & 5e-5 & 16$\times$A100 \\
-RLHF & 20K & 32 & 2e-5 & 8$\times$A100 \\
-\bottomrule
-\end{tabular}
-\caption{Zen-Musician Training Configuration}
-\end{table}
-
-\section{Evaluation}
-
-\subsection{Frechet Audio Distance (FAD)}
-
-FAD measures distribution distance between generated and real music in VGGish embedding space.
-Lower is better; human composers in identical prompt conditions achieve 1.8.
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lcc}
-\toprule
-\textbf{Model} & \textbf{FAD} $\downarrow$ & \textbf{Parameters} \\
-\midrule
-MusicLM & 4.0 & N/A (proprietary) \\
-AudioCraft / MusicGen-Large & 3.8 & 3.3B \\
-Stable Audio Open & 4.4 & 1.1B \\
-JEN-1 & 2.7 & 0.3B \\
-Human composers (reference) & 1.8 & -- \\
-\textbf{Zen-Musician} & \textbf{2.3} & 3B \\
-\bottomrule
-\end{tabular}
-\caption{Frechet Audio Distance on MusicCaps evaluation set}
-\end{table}
-
-\subsection{Music Opinion Score (MOS)}
-
-Twenty professional musicians rated 200 generated compositions on five criteria.
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lc}
-\toprule
-\textbf{Criterion} & \textbf{Mean Score (1--5)} \\
-\midrule
-Harmonic coherence & 4.2 \\
-Rhythmic consistency & 4.4 \\
-Structural form (verse/chorus logic) & 3.9 \\
-Genre authenticity & 4.1 \\
-Emotional expressiveness & 4.0 \\
-\midrule
-\textbf{Overall MOS} & \textbf{4.1} \\
-\bottomrule
-\end{tabular}
-\caption{Music Opinion Score (N=20 professional musicians)}
-\end{table}
-
-\subsection{Genre Consistency}
-
-We evaluate genre consistency using a fine-tuned genre classifier on 500 generated samples
-per genre, measuring what fraction are correctly classified:
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lcc}
-\toprule
-\textbf{Genre} & \textbf{Zen-Musician} & \textbf{MusicGen-Large} \\
-\midrule
-Classical & 91.4\% & 83.2\% \\
-Jazz & 87.2\% & 74.1\% \\
-Pop & 93.8\% & 88.6\% \\
-Electronic/EDM & 95.1\% & 91.3\% \\
-Folk & 82.3\% & 69.4\% \\
-Metal & 88.7\% & 72.8\% \\
-\textbf{Average} & \textbf{89.8\%} & \textbf{79.9\%} \\
-\bottomrule
-\end{tabular}
-\caption{Genre Classification Accuracy of Generated Music}
-\end{table}
-
-\subsection{Structural Analysis}
-
-To evaluate large-scale structure, we measure the presence and proper placement of structural
-sections (intro, verse, chorus, bridge, outro) in generated 3-minute compositions, as
-detected by a structure segmentation model:
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lcc}
-\toprule
-\textbf{Model} & \textbf{Section F1} $\uparrow$ & \textbf{Repetition Consistency} \\
-\midrule
-MusicGen-Large & 0.52 & 61.3\% \\
-AudioCraft XL & 0.58 & 67.4\% \\
-\textbf{Zen-Musician (SAT)} & \textbf{0.79} & \textbf{84.2\%} \\
-\bottomrule
-\end{tabular}
-\caption{Musical Structure Quality Metrics}
-\end{table}
-
-\subsection{Accompaniment Quality}
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lcc}
-\toprule
-\textbf{Metric} & \textbf{Value} \\
-\midrule
-Harmonic correctness (% in-key) & 94.7\% \\
-Beat alignment error (ms) & 22.3 \\
-Musician preference vs. random & 91.4\% \\
-Real-time latency & 120ms \\
-\bottomrule
-\end{tabular}
-\caption{Accompaniment Mode Evaluation}
-\end{table}
-
-\section{Applications}
-
-\subsection{Content Creation}
-
-Zen-Musician is integrated into Hanzo's content creation platform, enabling video creators to
-generate custom background music from natural language descriptions (``upbeat jazz, 90 seconds,
-suitable for a cooking tutorial''). Time-to-music is under 8 seconds for 90-second clips.
-
-\subsection{Real-Time Performance}
-
-Musicians use Zen-Musician in live performance via the Zen-Musician VST plugin, which provides
-real-time accompaniment that adapts to the performer's tempo, key, and dynamics.
-
-\subsection{Film Scoring}
-
-The model generates adaptive film scores conditioned on video (via integration with Zen-Foley's
-video encoder) that automatically adjust mood and intensity to match scene content.
-
-\section{Integration}
-
-\begin{lstlisting}[language=Python, caption=Zen-Musician Composition Generation]
+\begin{lstlisting}[language=Python, caption=Zen-Musician (packaged YuE) lyrics-to-song generation]
 from zen import ZenMusician
 
-model = ZenMusician.from_pretrained("zenlm/zen-musician-3b")
+# Loads the packaged YuE Stage-1 (7B) generator; Stage-2 refinement
+# runs as part of the pipeline.
+model = ZenMusician.from_pretrained("zenlm/zen-musician")  # wraps m-a-p/YuE-s1-7B-*
 
-# Text-to-music generation
-audio = model.compose(
-    prompt="An introspective jazz ballad in F minor, "
-           "featuring solo piano with brushed drums, "
-           "verse-chorus-bridge structure, 3 minutes",
-    bpm=72,
-    duration_sec=180,
-    format="wav"
-)
-audio.save("composition.wav")
+genre = "inspiring pop female vocal bright piano uplifting"
 
-# Accompaniment generation
-from zen import MidiStream
-melody = MidiStream.from_file("melody.mid")
-accompaniment = model.accompany(
-    melody=melody,
-    style="bossa nova",
-    instruments=["guitar", "bass", "drums"]
+lyrics = """
+[verse]
+Lines of the verse go here
+Another line that scans and rhymes
+[chorus]
+The hook that repeats and stays
+Carrying the song through its days
+"""
+
+song = model.generate(
+    genre_tags=genre,
+    lyrics=lyrics,
+    # optional reference audio enables ICL style/voice conditioning
+    # reference_audio="reference.wav",
 )
+song.save("song.wav")
 \end{lstlisting}
+
+\section{Provenance and Attribution}
+
+Zen-Musician redistributes YuE. Required and recommended attribution:
+
+\begin{itemize}
+    \item \textbf{Model}: YuE --- Open Full-Song Music Generation Foundation Model.
+    \item \textbf{Authors / affiliations}: M-A-P (Multimodal Art Projection) and
+    HKUST (R.\ Yuan, H.\ Lin, S.\ Guo, G.\ Zhang, et al.; Y.\ Guo)
+    \cite{yuan2025yue}.
+    \item \textbf{License}: Apache-2.0 \cite{yuehf}.
+    \item \textbf{Suggested credit}: ``YuE by HKUST/M-A-P.''
+    \item \textbf{Source}: \href{https://github.com/multimodal-art-projection/YuE}{github.com/multimodal-art-projection/YuE};
+    weights at \href{https://huggingface.co/m-a-p}{huggingface.co/m-a-p}.
+\end{itemize}
 
 \section{Conclusion}
 
-Zen-Musician's Section-Aware Transformer architecture and unified MIDI-audio token space produce
-music with measurably better large-scale structure (SAT section F1: 0.79 vs. 0.58 for best
-baseline) and competitive perceptual quality (FAD 2.3, MOS 4.1/5). The model's real-time
-accompaniment capability opens new applications in live performance while its large-scale
-generation pipeline serves content creation at production scale.
+Zen-Musician is the Zen stack's packaging of YuE, an Apache-2.0 long-form
+lyrics-to-song model from M-A-P and HKUST. The real system is a decoder-only,
+LLaMA-2-style autoregressive transformer (Stage-1 $\approx$7B) that performs
+track-decoupled next-token prediction over discrete audio tokens to generate
+vocals and accompaniment, followed by a $\approx$1B Stage-2 refinement/upsampling
+model. Conditioning is by lyrics and genre/style text, with an optional ICL mode
+for reference-based style transfer. All credit for the architecture, training, and
+reported capabilities belongs to YuE's authors; Zen's contribution is integration
+and distribution under the upstream license, with attribution. The from-scratch
+architecture and benchmark claims in the earlier draft were fabricated and have
+been removed.
 
 \begin{thebibliography}{10}
-\bibitem{defossez2022encodec} A. Defossez et al., ``High Fidelity Neural Audio Compression,'' arXiv:2210.13438, 2022.
-\bibitem{copet2023musicgen} J. Copet et al., ``Simple and Controllable Music Generation,'' NeurIPS, 2023.
-\bibitem{agostinelli2023musiclm} A. Agostinelli et al., ``MusicLM: Generating Music From Text,'' arXiv:2301.11325, 2023.
+\bibitem{yuan2025yue} R.\ Yuan, H.\ Lin, S.\ Guo, G.\ Zhang, et al., ``YuE: Scaling Open Foundation Models for Long-Form Music Generation,'' arXiv:2503.08638, 2025. \url{https://arxiv.org/abs/2503.08638}
+\bibitem{yuehf} M-A-P, ``YuE model cards (Apache-2.0),'' Hugging Face. \url{https://huggingface.co/m-a-p/YuE-s1-7B-anneal-en-cot}
+\bibitem{yuegh} Multimodal Art Projection, ``YuE: Open Full-song Music Generation Foundation Model,'' GitHub. \url{https://github.com/multimodal-art-projection/YuE}
+\bibitem{touvron2023llama2} H.\ Touvron et al., ``Llama 2: Open Foundation and Fine-Tuned Chat Models,'' arXiv:2307.09288, 2023.
 \end{thebibliography}
 
 \end{document}
