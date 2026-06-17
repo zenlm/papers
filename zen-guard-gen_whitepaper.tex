@@ -14,7 +14,7 @@
 \hypersetup{colorlinks=true,linkcolor=zenblue,urlcolor=zenblue,citecolor=zenblue}
 
 \title{\textbf{Zen-Guard-Gen: A Generative Safety Classifier\\
-Fine-Tuned from Qwen2.5-7B}\\[0.5em]
+Built on Qwen3Guard-Gen-8B}\\[0.5em]
 \large Technical Whitepaper v2025.05}
 \author{Zach Kelling \\ Zen LM Research Team\\
 \texttt{research@zenlm.org}\\
@@ -25,20 +25,24 @@ Fine-Tuned from Qwen2.5-7B}\\[0.5em]
 \maketitle
 
 \begin{abstract}
-Zen-Guard-Gen is a \emph{generative} safety classifier built by fine-tuning Alibaba's
-\textbf{Qwen2.5-7B} base model~\cite{qwen25}. It is \emph{not} a from-scratch model and uses
-no bespoke ``Zen MoDE'' architecture: the base is the openly released, Apache-2.0 licensed
-\texttt{Qwen/Qwen2.5-7B}, a dense decoder-only transformer (\texttt{Qwen2ForCausalLM};
-7.61B parameters, 28 layers, hidden size 3584, GQA with 28 query / 4 key--value heads, vocab
-152{,}064, up to a 128K context, 29+ languages). On top of this base we add a supervised
-safety-instruction fine-tune so that, given a content item and a policy, the model emits a
-structured verdict plus a natural-language explanation, a policy reference, and (for
-borderline or unsafe content) a remediation suggestion --- making decisions auditable and
-contestable rather than opaque. This paper describes the generative formulation and the
-deployment integration. We do not report safety benchmark numbers: the upstream Qwen2.5-7B is
-a general-purpose LLM with no published safety-classifier metrics, and we have not run a
-rigorous safety evaluation of our fine-tune; the inflated benchmark figures (e.g. ``ToxiGen
-99.1\%'') in earlier revisions were fabricated and have been removed.
+Zen-Guard-Gen is a \emph{generative} safety classifier built on Alibaba's
+\textbf{Qwen3Guard-Gen-8B}~\cite{qwen3guard}, a purpose-built multilingual guardrail model. It
+is \emph{not} a from-scratch model and uses no bespoke ``Zen MoDE'' architecture: the base is
+the openly released, Apache-2.0 licensed \texttt{Qwen/Qwen3Guard-Gen-8B}, itself a safety
+fine-tune of Qwen3-8B (a dense decoder-only transformer, \texttt{Qwen3ForCausalLM};
+$\approx$8.2B parameters, 36 layers, hidden size 4096, GQA with 32 query / 8 key--value heads,
+head dimension 128, vocab 151{,}936). Unlike a general-purpose LLM, Qwen3Guard-Gen is already a
+\emph{generative} safety classifier: it frames moderation as an instruction-following task,
+ingests the full user prompt and model response, and emits a verdict over three severity tiers
+--- \textbf{safe}, \textbf{controversial}, and \textbf{unsafe} --- across 119 languages and
+dialects~\cite{qwen3guard}. On top of this base Zen adds packaging that wraps the upstream
+verdict with a natural-language explanation, a policy reference, and (for controversial or
+unsafe content) a remediation suggestion --- making decisions auditable and contestable rather
+than opaque. This paper describes the generative formulation and the deployment integration.
+Where we cite quantitative results we attribute them to the upstream Qwen3Guard technical
+report~\cite{qwen3guard}; we have not run an independent safety evaluation of the Zen
+packaging, and the inflated, fabricated figures (e.g. ``ToxiGen 99.1\%'') in earlier revisions
+have been removed.
 \end{abstract}
 
 \tableofcontents
@@ -57,7 +61,7 @@ Binary content safety classifiers have been the workhorse of large-scale content
 Zen-Guard-Gen addresses all three limitations by framing safety classification as a generation task. Given a content item, Zen-Guard-Gen produces:
 
 \begin{enumerate}
-  \item A structured safety verdict (safe / unsafe / borderline).
+  \item A structured safety verdict over Qwen3Guard's three severity tiers (safe / controversial / unsafe).
   \item A primary policy category (hate speech, harassment, CSAM, violence, misinformation, etc.).
   \item A natural language explanation of the reasoning underlying the verdict.
   \item A reference to the applicable policy section.
@@ -69,18 +73,21 @@ Zen-Guard-Gen addresses all three limitations by framing safety classification a
 \begin{table}[H]
 \centering
 \caption{Zen-Guard-Gen specification. Architecture and base-model facts are those of the
-upstream Qwen2.5-7B~\cite{qwen25}; Zen-Guard-Gen is a safety-instruction fine-tune of it.}
+upstream Qwen3Guard-Gen-8B / Qwen3-8B~\cite{qwen3guard}; Zen-Guard-Gen wraps it with
+explanation/policy/remediation packaging.}
 \begin{tabular}{ll}
 \toprule
 \textbf{Parameter} & \textbf{Value} \\
 \midrule
-Base model & Qwen2.5-7B (Alibaba), Apache-2.0 \\
-Architecture & Dense decoder-only transformer (\texttt{Qwen2ForCausalLM}) \\
-Total Parameters & 7.61B \\
-Layers / hidden size & 28 / 3584 \\
-Attention heads (Q / KV, GQA) & 28 / 4 \\
-Vocabulary & 152{,}064 \\
-Context length & up to 131{,}072 (128K) \\
+Base model & Qwen3Guard-Gen-8B (Alibaba), Apache-2.0 \\
+Underlying base & Qwen3-8B, dense decoder-only (\texttt{Qwen3ForCausalLM}) \\
+Total Parameters & $\approx$8.2B \\
+Layers / hidden size & 36 / 4096 \\
+Attention heads (Q / KV, GQA) & 32 / 8 \\
+Head dimension & 128 \\
+Vocabulary & 151{,}936 \\
+Severity tiers & safe / controversial / unsafe \\
+Languages & 119 languages and dialects \\
 Output & generative: verdict + explanation + policy ref + remediation \\
 Version & v2025.05 \\
 \bottomrule
@@ -88,8 +95,9 @@ Version & v2025.05 \\
 \end{table}
 
 Note: ``Image captions'' and ``transcribed audio'' are upstream text inputs, not native
-multimodal capabilities; Qwen2.5-7B is a text model. Safety benchmark accuracies are
-deliberately omitted (see abstract).
+multimodal capabilities; Qwen3Guard-Gen-8B is a text model. Quantitative safety results, where
+reported, are attributed to the upstream Qwen3Guard technical report~\cite{qwen3guard}; Zen has
+not run an independent evaluation of its packaging (see abstract).
 
 \section{Safety Taxonomy}
 
@@ -122,16 +130,21 @@ Other & 44 & Platform-specific \\
 \end{tabular}
 \end{table}
 
-\subsection{Severity Levels}
+\subsection{Severity Tiers}
 
-Each category is scored on a severity scale aligned with CVSS-style impact ratings:
+The primary verdict follows the upstream Qwen3Guard three-tier severity
+scheme~\cite{qwen3guard}:
 
 \begin{itemize}
-  \item \textbf{Level 1 (Borderline)}: Content that may violate policy depending on context; requires human review.
-  \item \textbf{Level 2 (Moderate)}: Clear policy violation warranting removal and possible account warning.
-  \item \textbf{Level 3 (Severe)}: Serious violation warranting immediate removal and escalation.
-  \item \textbf{Level 4 (Critical)}: Content requiring immediate removal and law enforcement referral (CSAM, credible threats).
+  \item \textbf{Safe}: Content generally considered safe across most scenarios.
+  \item \textbf{Controversial}: Content whose harmfulness is context-dependent or subject to disagreement across applications; the natural place to route human review.
+  \item \textbf{Unsafe}: Content generally considered harmful across most scenarios.
 \end{itemize}
+
+For operators that require finer-grained enforcement, the Zen packaging optionally maps the
+\textbf{unsafe} tier onto an escalation ladder --- e.g. removal, account warning, escalation,
+or law-enforcement referral for CSAM and credible threats --- but this enforcement mapping is a
+deployment policy layered on top of the upstream verdict, not an additional model output.
 
 \section{Architecture}
 
@@ -144,7 +157,10 @@ Zen-Guard-Gen treats safety classification as a conditional generation problem. 
   p(y | x) &= \prod_{t=1}^{|y|} p(y_t | y_{<t}, x)
 \end{align}
 
-The structured output grammar is enforced via constrained decoding: the verdict, category, and severity fields use restricted vocabulary sampling from predefined value sets, while the explanation and remediation fields use unconstrained generation within a length limit.
+The structured output grammar is enforced via constrained decoding: the verdict field is
+restricted to the upstream safe / controversial / unsafe tiers~\cite{qwen3guard}, the category
+and severity fields sample from predefined value sets, while the explanation and remediation
+fields use unconstrained generation within a length limit.
 
 This hybrid approach ensures structural consistency (no malformed outputs) while preserving the expressive flexibility of natural language for the reasoning components.
 
@@ -162,32 +178,36 @@ The policy conditioning is implemented through a 4K-token prefix reserved for th
 
 \subsection{Calibrated Uncertainty}
 
-For borderline content, Zen-Guard-Gen produces calibrated uncertainty estimates alongside verdicts. A temperature-scaled confidence score $c \in [0,1]$ accompanies each verdict:
+For controversial content, Zen-Guard-Gen produces calibrated uncertainty estimates alongside verdicts. A temperature-scaled confidence score $c \in [0,1]$ accompanies each verdict:
 
 \begin{equation}
   c = \sigma\left(\frac{z_{\text{verdict}}}{T_{\text{cal}}}\right)
 \end{equation}
 
-where $z_{\text{verdict}}$ is the logit for the predicted verdict and $T_{\text{cal}}$ is a calibration temperature estimated on a held-out set. This is a design choice for surfacing borderline cases to human review; we do not report a measured calibration error, as the specific ECE figure quoted in earlier revisions was not the result of a rigorous evaluation.
+where $z_{\text{verdict}}$ is the logit for the predicted verdict and $T_{\text{cal}}$ is a calibration temperature estimated on a held-out set. This is a design choice for surfacing controversial cases to human review; we do not report a measured calibration error, as the specific ECE figure quoted in earlier revisions was not the result of a rigorous evaluation.
 
 \section{Training Methodology}
 
 \subsection{Approach}
 
-Starting from the Qwen2.5-7B base model~\cite{qwen25}, Zen-Guard-Gen is produced by supervised
-instruction fine-tuning on (content, policy) $\rightarrow$ structured-verdict examples, so that
-the model learns to emit the verdict/category/severity fields plus a natural-language
-explanation, a policy reference, and a remediation suggestion. This section describes the
-\emph{intended} recipe; we do not publish dataset sizes or composition, because the specific
-figures in earlier revisions (a 300M-item corpus with per-source percentages, a ``500K seed /
-50K preference pair'' explanation-tuning split, and a ``40 researchers over 6 weeks'' red-team)
-were fabricated and did not describe a real training run.
+The base, Qwen3Guard-Gen-8B, is \emph{already} a safety classifier: the Qwen team produced it
+by supervised instruction fine-tuning of Qwen3-8B on over 1.19M human-annotated and
+synthetically generated safety samples, framing classification as an
+instruction-following task over the safe / controversial / unsafe tiers~\cite{qwen3guard}. The
+upstream safety capability therefore comes from Alibaba's training run, not from Zen. On top of
+it, the Zen packaging maps the upstream verdict into the (content, policy)
+$\rightarrow$ structured-verdict schema --- verdict/category/severity plus a natural-language
+explanation, a policy reference, and a remediation suggestion. We do not publish a Zen
+training corpus, because the specific figures in earlier revisions (a 300M-item corpus with
+per-source percentages, a ``500K seed / 50K preference pair'' explanation-tuning split, and a
+``40 researchers over 6 weeks'' red-team) were fabricated and did not describe a real training
+run.
 
-The honest, defensible statements are: (i) the base weights and their license, training, and
-capabilities are Alibaba's Qwen2.5-7B~\cite{qwen25}; (ii) any safety behavior is added by Zen
-via fine-tuning on safety-annotated data; and (iii) we make no quantitative claim about the
-fine-tune's accuracy without a rigorous, reproducible evaluation, which this document does not
-contain.
+The honest, defensible statements are: (i) the base weights, their Apache-2.0 license,
+training data, and safety capability are Alibaba's Qwen3Guard-Gen-8B~\cite{qwen3guard};
+(ii) Zen contributes the explanation/policy/remediation packaging around the upstream verdict;
+and (iii) any quantitative result we cite is attributed to the upstream Qwen3Guard technical
+report --- Zen has not run an independent, reproducible evaluation of its packaging.
 
 \subsection{Known Limitations}
 
@@ -199,19 +219,24 @@ quantified here.
 
 \section{Evaluation}
 
-We intentionally report no benchmark numbers. The upstream Qwen2.5-7B is a general-purpose
-LLM with no published safety-classifier metrics~\cite{qwen25}, and we have not conducted a
-rigorous, reproducible safety evaluation of the Zen fine-tune. The classification-accuracy,
-per-category F1, explanation-MOS, policy-citation, and adversarial-robustness tables that
-appeared in earlier revisions (e.g. ToxiGen 99.1\%, HatEval 97.4\%, composite MOS 4.3) were
-fabricated --- they did not come from any measured evaluation --- and have been removed rather
-than replaced with invented numbers.
+We report no \emph{Zen-measured} benchmark numbers. The numbers we do quote are the upstream
+Qwen team's, attributed to the Qwen3Guard technical report~\cite{qwen3guard}: on English
+\emph{prompt} classification the 8B generative model attains an average F1 of \textbf{90.0}
+across ToxicChat, OpenAI Moderation, Aegis, Aegis 2.0, SimpleSafetyTests, HarmBench, and
+WildGuardTest, and on English \emph{response} classification an average F1 of \textbf{83.9}
+across HarmBench, SafeRLHF, BeaverTails, XSTest, Aegis 2.0, WildGuardTest, and a reasoning
+(``Think'') benchmark. These describe the upstream base, not the Zen packaging. The
+classification-accuracy, explanation-MOS, policy-citation, and adversarial-robustness tables
+that appeared in earlier revisions (e.g. ToxiGen 99.1\%, HatEval 97.4\%, composite MOS 4.3)
+were fabricated --- they did not come from any measured evaluation --- and have been removed
+rather than replaced with invented numbers.
 
-A claim worth keeping qualitatively, without a number attached: a \emph{generative} safety
-classifier that must produce an explanation can be more transparent and auditable than an
-opaque binary classifier, because the rationale is inspectable by a human reviewer. Whether it
-is also \emph{more accurate} is an empirical question we do not answer here. Adopters should
-evaluate on their own labeled data; see Section~\ref{sec:limitations-eval}.
+A claim worth keeping qualitatively, without a Zen-measured number attached: a
+\emph{generative} safety classifier that must produce an explanation can be more transparent
+and auditable than an opaque binary classifier, because the rationale is inspectable by a human
+reviewer. Whether the Zen packaging preserves the upstream's accuracy on a given operator's
+distribution is an empirical question we do not answer here. Adopters should evaluate on their
+own labeled data; see Section~\ref{sec:limitations-eval}.
 
 \subsection{Recommended Evaluation Before Deployment}
 \label{sec:limitations-eval}
@@ -235,8 +260,8 @@ Zen-Guard-Gen is designed for two deployment modes:
 
 \subsection{Inference Cost}
 
-Because Zen-Guard-Gen is a 7.61B-parameter generative model, its serving cost is that of an
-8B-class LLM and is dominated by the number of output tokens: a verdict-only response is
+Because Zen-Guard-Gen is an $\approx$8.2B-parameter generative model, its serving cost is that
+of an 8B-class LLM and is dominated by the number of output tokens: a verdict-only response is
 cheap, while a full explanation plus remediation generates many more tokens and is
 correspondingly slower. Concrete throughput and latency depend entirely on the operator's
 hardware, batching, and quantization, so we do not publish the specific FP8/H100 figures that
@@ -244,18 +269,18 @@ appeared (unmeasured) in earlier revisions.
 
 \section{Related Work}
 
-Content safety classification has been addressed through fine-tuned BERT-class models \cite{perspective}, LLM-based guardrails such as Llama Guard \cite{llmguard}, and rule-based systems \cite{cld}. Explanation generation for classification decisions has been studied under the framing of rationale extraction \cite{rationale} and chain-of-thought safety reasoning \cite{cot_safety}. Zen-Guard-Gen sits in the LLM-guardrail line: it is a Qwen2.5-7B base~\cite{qwen25} fine-tuned to produce a verdict together with an explanation, a policy reference, and a remediation suggestion.
+Content safety classification has been addressed through fine-tuned BERT-class models \cite{perspective}, LLM-based guardrails such as Llama Guard \cite{llmguard}, and rule-based systems \cite{cld}. Explanation generation for classification decisions has been studied under the framing of rationale extraction \cite{rationale} and chain-of-thought safety reasoning \cite{cot_safety}. Qwen3Guard~\cite{qwen3guard} is itself a recent entry in the LLM-guardrail line, offering generative and streaming variants with three-tier severity over 119 languages. Zen-Guard-Gen sits on top of the Qwen3Guard-Gen-8B base~\cite{qwen3guard}, packaging its verdict together with an explanation, a policy reference, and a remediation suggestion.
 
 \section{Conclusion}
 
-Zen-Guard-Gen is a generative safety classifier built by fine-tuning Alibaba's Apache-2.0 Qwen2.5-7B base model~\cite{qwen25}; it is not a from-scratch model and uses no ``Zen MoDE'' architecture. Its premise is that a safety classifier which must \emph{explain} its verdict (with a policy reference and a remediation suggestion) yields more auditable, contestable decisions than an opaque binary label. We deliberately make no benchmark claims: the upstream base has no published safety metrics, and we have not run a rigorous evaluation of the fine-tune, so the inflated ToxiGen/HatEval/MOS/robustness figures of earlier revisions have been removed as fabrications. Operators should validate the model on their own content distribution before relying on it.
+Zen-Guard-Gen is a generative safety classifier built on Alibaba's Apache-2.0 Qwen3Guard-Gen-8B~\cite{qwen3guard} (itself a safety fine-tune of Qwen3-8B); it is not a from-scratch model and uses no ``Zen MoDE'' architecture --- it is a redistribution of a purpose-built guardrail model with explanation/policy/remediation packaging. Its premise is that a safety classifier which must \emph{explain} its verdict (with a policy reference and a remediation suggestion) yields more auditable, contestable decisions than an opaque binary label. Any quantitative result we cite is the upstream Qwen team's, attributed to the Qwen3Guard report; the inflated ToxiGen/HatEval/MOS/robustness figures of earlier revisions have been removed as fabrications, and Zen has not run an independent evaluation of its packaging. Operators should validate the model on their own content distribution before relying on it.
 
 \section*{Attribution}
 
-The base weights, training, license, and capabilities are Alibaba's Qwen2.5-7B (\texttt{Qwen/Qwen2.5-7B}, Apache-2.0); Zen contributes a safety-instruction fine-tune and packaging. We thank the Qwen team for releasing the base model openly.
+The base weights, training data, license, and safety capability are Alibaba's Qwen3Guard-Gen-8B (\texttt{Qwen/Qwen3Guard-Gen-8B}, Apache-2.0), itself a safety fine-tune of Qwen3-8B; Zen contributes the explanation/policy/remediation packaging. We thank the Qwen team for releasing the base model openly under a permissive license.
 
 \begin{thebibliography}{9}
-\bibitem{qwen25} Qwen Team, Alibaba (2024). Qwen2.5 Technical Report. arXiv:2412.15115. Base model: \texttt{Qwen/Qwen2.5-7B} (Apache-2.0).
+\bibitem{qwen3guard} Qwen Team, Alibaba (2025). Qwen3Guard Technical Report. arXiv:2510.14276. Base model: \texttt{Qwen/Qwen3Guard-Gen-8B} (Apache-2.0), a safety fine-tune of Qwen3-8B.
 \bibitem{perspective} Lees, A. et al. (2022). A New Generation of Perspective API: Efficient Multilingual Character-level Transformers. arXiv:2202.11176.
 \bibitem{llmguard} Inan, H. et al. (2023). Llama Guard: LLM-based Input-Output Safeguard for Human-AI Conversations. arXiv:2312.06674.
 \bibitem{cld} Waseem, Z. et al. (2016). Hateful Symbols or Hateful People? Predictive Features for Hate Speech Detection on Twitter. NAACL 2016.
