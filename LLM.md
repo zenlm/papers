@@ -1,7 +1,10 @@
-# papers — AI Assistant Context
+# papers
 
-# Zen Model Papers
+LaTeX research papers for the Zen family of language models (600M–480B+ params): architectures, training, benchmarks, deployment. Co-developed by Hanzo AI and Zoo Labs Foundation.
 
-[![Compile Papers](https://github.com/zenlm/papers/actions/workflows/compile-papers.yml/badge.svg)](https://github.com/zenlm/papers/actions/workflows/compile-papers.yml)
-[![Papers](https://img.shields.io/badge/papers-22-blue)](https://github.com/zenlm/papers)
-[![License](https://img.shields.io/badge/license-CC--BY--4.0-green)](LICENSE)
+One paper per directory, no top-level `.tex`. Each `<slug>/<slug>.tex` `\input`s modular `sections/NN-name.tex`. Shared cover/listings in `shared/` (`zencover.sty`, `lstlang.tex`). Catalogue in `INDEX.md` (auto-generated).
+
+- Build one: `cd <slug> && TEXINPUTS=".:..:" latexmk -pdf <slug>.tex`
+- Build all: `make all`
+
+Full docs: README.md
