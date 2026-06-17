@@ -33,9 +33,9 @@
     \vspace{0.5cm}
     \Huge \textbf{Zen-World} \\
     \vspace{0.3cm}
-    \large World Modeling, Physics Simulation, and Causal Reasoning at Scale \\
+    \large Packaging Wan2.1 Text-to-Video Generation for the Zen Stack \\
     \vspace{0.5cm}
-    \normalsize Technical Report v2025.02
+    \normalsize Technical Report
 }
 
 \author{
@@ -43,51 +43,62 @@
     Zoo Labs Foundation\thanks{foundation@zoo.ngo}
 }
 
-\date{February 2025}
+\date{June 2026}
 
 \begin{document}
 
 \maketitle
 
 \begin{abstract}
-We present \textbf{Zen-World}, a 32-billion parameter world model capable of physics simulation,
-causal reasoning, counterfactual prediction, and long-horizon environment modeling. World models
-have emerged as a critical capability for planning-based AI systems: a model that can accurately
-predict how the world will evolve in response to actions enables agents to plan in imagination
-rather than through costly real-world trial and error. Zen-World achieves 87.3\% on the PhysBench
-physical reasoning benchmark, 82.1\% on CausalQA (causal question answering over dynamic scenes),
-and 91.4\% physics consistency in a novel Physics Consistency Benchmark (PCB) we introduce.
-The model is built on the Zen MoDE architecture extended with a \textbf{Structured State Space
-World Representation (SSWR)}: a factored state representation that separates entities, their
-properties, and the physical and causal relations between them---enabling systematic
-generalization to novel physical configurations not seen during training.
+\textbf{Zen-World} is a packaging and integration of \textbf{Wan2.1-T2V-14B}, the open-source
+text-to-video diffusion model developed and released by Alibaba's Team Wan, into the Zen model
+stack. Zen-World is \emph{not} a from-scratch model: it redistributes the upstream
+\texttt{Wan-AI/Wan2.1-T2V-14B} weights and architecture under the permissive Apache~2.0 license,
+adding Zen-stack loaders, configuration, and a unified inference interface. The underlying model is
+a $\sim$14-billion-parameter Diffusion Transformer (DiT) trained with a flow-matching objective,
+paired with the Wan2.1 3D causal variational autoencoder (Wan-VAE) for spatio-temporal latent
+compression and the multilingual umT5 text encoder for prompt conditioning. It generates 480P and
+720P video from English or Chinese text prompts. This report describes the real architecture as
+released upstream, attributes it to its authors, and documents how it is integrated into Zen. All
+architectural and capability claims here are those of the upstream Wan2.1 release; we do not report
+any independent benchmark numbers of our own.
 \end{abstract}
+
+\section*{Attribution and License}
+\addcontentsline{toc}{section}{Attribution and License}
+
+\textbf{Upstream model.} Zen-World redistributes \texttt{Wan-AI/Wan2.1-T2V-14B}, part of the
+\emph{Wan} series of open large-scale video generative models from Alibaba's Team Wan
+\cite{wan2025report}.
+
+\textbf{License.} The Wan2.1 models and source code are released under the
+\textbf{Apache License 2.0}. Zen-World preserves this license and the upstream copyright and
+attribution notices. No relicensing is claimed; redistribution is permitted because Apache~2.0 is a
+permissive license.
+
+\textbf{What Zen adds.} Zen-World contributes \emph{packaging only}: Zen-stack model loaders, a
+consistent configuration and weights layout, and a unified text-to-video inference API consistent
+with the rest of the Zen family. It does not modify the model architecture or retrain the weights.
 
 \tableofcontents
 \newpage
 
 \section{Introduction}
 
-A world model is a model that answers the question: \textit{given the current state of the world
-and an action, what happens next?} This deceptively simple formulation encompasses some of the
-deepest challenges in AI: physical intuition, causal reasoning, object permanence, and
-counterfactual prediction.
+Text-to-video generation synthesizes a short video clip from a natural-language description. Modern
+systems follow the diffusion-transformer paradigm: a transformer denoiser operates in a compressed
+video latent space produced by a video autoencoder, conditioned on text embeddings from a language
+encoder, and is trained to reverse a noising (or flow-matching) process \cite{wan2025report}.
 
-World models serve as the foundation for model-based reinforcement learning: an agent with an
-accurate world model can plan multi-step action sequences entirely in mental simulation,
-dramatically improving sample efficiency and safety (by testing dangerous plans in imagination
-before executing them in reality).
+Zen-World packages one such system---\textbf{Wan2.1-T2V-14B}---into the Zen stack. Wan2.1 was
+released by Alibaba's Team Wan as an open, Apache-2.0-licensed family of video generative models
+\cite{wan2025report}. The 14B text-to-video variant is the model redistributed here. Zen-World
+provides Zen-native loading and a unified inference interface; the generative capability, weights,
+and architecture are entirely those of the upstream release.
 
-Zen-World is designed as a general-purpose world model with three primary capabilities:
-
-\begin{enumerate}
-    \item \textbf{Physics simulation}: Predict the physical evolution of scenes---trajectories,
-    collisions, fluid dynamics, rigid body motion---from visual observations.
-    \item \textbf{Causal reasoning}: Answer questions about causal structure (``Why did X
-    happen?'', ``Would Y have happened if Z had not occurred?'').
-    \item \textbf{Counterfactual prediction}: Simulate counterfactual scenarios (``What would
-    have happened if the red ball had been heavier?'').
-\end{enumerate}
+This report (1) attributes the model to its authors and states its license, (2) describes the real
+Wan2.1 architecture and its components, (3) clarifies the scope of Zen's integration, and
+(4) reports only capabilities and figures stated by the upstream release, with attribution.
 
 \subsection{Model Overview}
 
@@ -97,302 +108,178 @@ Zen-World is designed as a general-purpose world model with three primary capabi
 \toprule
 \textbf{Property} & \textbf{Value} \\
 \midrule
-Parameters & 32B \\
-Architecture & Zen MoDE 32B + SSWR module \\
-Context Length & 128K tokens (supports 10+ minute scene sequences) \\
-Physics Timestep & Configurable 10ms--1s \\
-Simulation Domains & Rigid body, fluid, cloth, soft body, molecular \\
-Counterfactual Depth & Up to 50 intervention steps \\
-Training Data & 2.1B simulated frames, 180M real-world video frames \\
+Upstream model & \texttt{Wan-AI/Wan2.1-T2V-14B} (Alibaba Team Wan) \\
+Task & Text-to-video generation \\
+License & Apache 2.0 \\
+Architecture & Diffusion Transformer (DiT), flow matching \\
+Denoiser parameters & $\sim$14B \\
+Latent autoencoder & Wan2.1 3D causal VAE (Wan-VAE) \\
+Text encoder & umT5 (multilingual; English / Chinese prompts) \\
+Output resolutions & 480P ($832\times480$), 720P ($1280\times720$) \\
+Zen contribution & Packaging / integration into the Zen stack \\
 \bottomrule
 \end{tabular}
-\caption{Zen-World Model Specifications}
+\caption{Zen-World summary. Architecture and capability values are those of upstream Wan2.1.}
 \end{table}
 
 \section{Architecture}
 
-\subsection{Structured State Space World Representation (SSWR)}
+Wan2.1 follows the mainstream diffusion-transformer design and is composed of three primary
+components \cite{wan2025report}: a 3D causal VAE (\emph{Wan-VAE}), a multilingual umT5 text encoder,
+and a flow-matching Diffusion Transformer (DiT) denoiser. Figure-level overview:
 
-The key architectural innovation in Zen-World is the SSWR: a factored representation of world
-state that separates four orthogonal components:
-
-\textbf{Entity set} $\mathcal{E} = \{e_1, \ldots, e_N\}$: The set of objects in the scene,
-each with a learned embedding encoding its identity, material, shape, and learned physical
-properties.
-
-\textbf{State tensor} $S \in \mathbb{R}^{N \times D_s}$: The current state of each entity:
-position, velocity, angular velocity, deformation fields.
-
-\textbf{Relation graph} $\mathcal{R} \subseteq \mathcal{E} \times \mathcal{E} \times R$: Typed
-edges encoding physical relations: contact, attachment, fluid interaction, gravitational coupling.
-
-\textbf{Intervention set} $\mathcal{I}$: Pending actions or counterfactual interventions to be
-applied at the next simulation step.
-
-The world model's forward pass operates over this structured representation:
-
-\begin{align}
-    S_{t+1} &= f_\phi(S_t, \mathcal{R}_t, \mathcal{I}_t) \\
-    \mathcal{R}_{t+1} &= g_\phi(S_{t+1}, \mathcal{E})
-\end{align}
-
-where $f_\phi$ is the dynamics model and $g_\phi$ updates the relation graph based on the new
-entity states (e.g., detecting new contacts).
-
-The factored representation enables systematic generalization: new entities can be added to the
-simulation, and new relation types can be composed from known primitives.
-
-\subsection{Dynamics Model Architecture}
-
-The dynamics model $f_\phi$ is a message-passing graph neural network (GNN) operating over the
-SSWR graph, followed by 12 layers of the Zen MoDE transformer for global context integration:
-
-\begin{equation}
-    m_{ij} = \text{MLP}_e([h_i, h_j, r_{ij}, \Delta t])
-\end{equation}
-
-\begin{equation}
-    h_i' = h_i + \text{MLP}_v\left(h_i, \sum_{j \in \mathcal{N}(i)} m_{ij}\right)
-\end{equation}
-
-The GNN processes local physical interactions (contacts, collisions) efficiently, while the
-transformer handles long-range dependencies (e.g., a distant force field affecting multiple
-objects).
-
-\subsection{Causal Inference Module}
-
-For causal and counterfactual reasoning, Zen-World maintains a \textbf{causal graph}
-$\mathcal{C}$ alongside the physical simulation. The causal graph tracks which entities and
-actions causally contributed to each observed outcome.
-
-Counterfactual queries (``What if X had not happened?'') are answered by:
 \begin{enumerate}
-    \item Identifying the intervention point in the causal graph.
-    \item Rolling back the simulation to just before the intervention.
-    \item Re-simulating with the modified initial conditions.
-    \item Comparing the counterfactual trajectory to the observed trajectory.
+    \item \textbf{Wan-VAE} encodes video into a compact spatio-temporal latent and decodes
+    generated latents back to pixels.
+    \item \textbf{umT5} encodes the text prompt into embeddings.
+    \item \textbf{DiT} denoises the video latent, conditioned on the text embeddings via
+    cross-attention, under a flow-matching objective.
 \end{enumerate}
 
-This approach is grounded in Pearl's do-calculus \cite{pearl2009causality}:
-$P(\text{outcome} \mid \text{do}(\text{intervention}))$ is approximated by direct simulation.
+\subsection{Wan-VAE: 3D Causal Video Autoencoder}
 
-\section{Training}
+Generating video directly in pixel space is prohibitively expensive, so Wan2.1 operates in a
+compressed latent space produced by \textbf{Wan-VAE}, a 3D \emph{causal} variational autoencoder
+designed for video \cite{wan2025report}. The VAE performs spatio-temporal compression with a
+temporal downsampling factor of $t=4$ and spatial downsampling factors of $h=w=8$, while preserving
+temporal causality so that motion remains smooth across frames. The latent has 16 channels (the
+DiT's input and output channel dimension; see Table~\ref{tab:dit}). The causal design lets the VAE
+encode and decode long videos without breaking temporal consistency.
 
-\subsection{Dataset}
+\subsection{umT5 Text Encoder}
 
-\begin{table}[H]
-\centering
-\begin{tabular}{lrrl}
-\toprule
-\textbf{Source} & \textbf{Frames} & \textbf{Proportion} & \textbf{Domain} \\
-\midrule
-MuJoCo simulation & 800M & 38.1\% & Rigid body, robotics \\
-PhysX synthetic & 600M & 28.6\% & General physics \\
-Fluid simulation (SPH) & 300M & 14.3\% & Fluid dynamics \\
-Molecular dynamics & 200M & 9.5\% & Molecular simulation \\
-Real-world video (curated) & 180M & 8.6\% & Physical events \\
-Cloth/soft body sim. & 20M & 1.0\% & Deformable objects \\
-\midrule
-\textbf{Total} & \textbf{2,100,000,000} & 100\% & \\
-\bottomrule
-\end{tabular}
-\caption{Zen-World Training Data Composition}
-\end{table}
+Prompts are encoded by \textbf{umT5}, a multilingual T5-family text encoder. The resulting text
+embeddings condition the DiT through cross-attention. The multilingual encoder is one reason Wan2.1
+accepts both English and Chinese prompts, and---per the upstream release---Wan2.1 is described as
+the first video model able to generate both Chinese and English text within the rendered video
+\cite{wan2025report}. The text sequence length used by the 14B configuration is 512 tokens
+(Table~\ref{tab:dit}).
 
-\subsection{Training Protocol}
+\subsection{Diffusion Transformer (DiT)}
 
-\textbf{Stage 1 -- Physics encoder pretraining} (200K steps): The visual encoder + SSWR
-extraction network is trained to infer entity states and relation graphs from observations.
-Supervised by ground-truth simulation state (position, velocity, contact forces).
+The denoiser is a Diffusion Transformer. It processes the noised video latent as a sequence of
+patch tokens through a stack of transformer blocks. Each block (the \emph{WanAttentionBlock})
+combines, per the upstream design, vision self-attention over the video tokens, text-to-vision
+cross-attention that injects the umT5 prompt embeddings, and a feed-forward layer, with timestep
+conditioning applied to modulate the block \cite{wan2025report}.
 
-\textbf{Stage 2 -- Forward dynamics training} (300K steps): The dynamics model is trained to
-predict future states from current states and actions. Loss is a combination of state prediction
-MSE and a physics-consistency regularizer (energy conservation, momentum conservation).
-
-\textbf{Stage 3 -- Causal graph learning} (100K steps): The causal inference module is trained
-on simulation traces with annotated causal graphs, learning to identify and propagate causal
-attributions.
-
-\textbf{Stage 4 -- Counterfactual fine-tuning} (50K steps): Fine-tuned on paired
-(observed, counterfactual) simulation trajectories generated by systematic intervention sampling.
+The exact configuration of the redistributed 14B text-to-video model, taken directly from the
+upstream model configuration, is given in Table~\ref{tab:dit}.
 
 \begin{table}[H]
 \centering
-\begin{tabular}{lllll}
+\begin{tabular}{ll}
 \toprule
-\textbf{Stage} & \textbf{Steps} & \textbf{Batch} & \textbf{LR} & \textbf{Hardware} \\
+\textbf{Hyperparameter} & \textbf{Value (T2V-14B)} \\
 \midrule
-Physics encoder & 200K & 256 & 3e-4 & 64$\times$A100 \\
-Forward dynamics & 300K & 128 & 1e-4 & 128$\times$A100 \\
-Causal learning & 100K & 64 & 5e-5 & 32$\times$A100 \\
-Counterfactual FT & 50K & 32 & 2e-5 & 16$\times$A100 \\
+Model type & \texttt{t2v} (text-to-video) \\
+Model / embedding dimension (\texttt{dim}) & 5120 \\
+Transformer layers (\texttt{num\_layers}) & 40 \\
+Attention heads (\texttt{num\_heads}) & 40 \\
+Feed-forward dimension (\texttt{ffn\_dim}) & 13824 \\
+Latent input / output channels (\texttt{in\_dim} / \texttt{out\_dim}) & 16 \\
+Frequency embedding dimension (\texttt{freq\_dim}) & 256 \\
+Text sequence length (\texttt{text\_len}) & 512 \\
+LayerNorm epsilon (\texttt{eps}) & $1\times10^{-6}$ \\
 \bottomrule
 \end{tabular}
-\caption{Zen-World Training Configuration}
+\caption{Wan2.1-T2V-14B DiT configuration, from the upstream \texttt{config.json}.}
+\label{tab:dit}
 \end{table}
 
-\section{Evaluation}
+\subsection{Flow-Matching Objective}
 
-\subsection{PhysBench}
+Rather than a traditional discrete-noise diffusion schedule, Wan2.1 is trained with
+\textbf{flow matching} \cite{lipman2023flow, wan2025report}. Flow matching defines intermediate
+states by linear interpolation between a sample and noise and trains the network to predict the
+corresponding velocity (the time derivative of the interpolation path). Concretely, for a clean
+latent $x_1$ and noise $x_0 \sim \mathcal{N}(0, I)$, an intermediate latent is
+\begin{equation}
+    x_t = (1 - t)\, x_0 + t\, x_1, \qquad t \in [0, 1],
+\end{equation}
+and the model $v_\theta$ is trained to regress the target velocity $x_1 - x_0$:
+\begin{equation}
+    \mathcal{L}_{\text{FM}} = \mathbb{E}_{t,\, x_0,\, x_1,\, c}
+    \left\lVert v_\theta(x_t, t, c) - (x_1 - x_0) \right\rVert_2^2,
+\end{equation}
+where $c$ denotes the umT5 text conditioning. At inference, video latents are generated by
+integrating the learned velocity field from noise, then decoded to pixels by Wan-VAE.
 
-PhysBench evaluates physical reasoning across 5 categories: projectile motion, fluid dynamics,
-rigid body collisions, elastic deformation, and gravitational interactions.
+\section{Capabilities (as reported upstream)}
 
-\begin{table}[H]
-\centering
-\begin{tabular}{lccccc}
-\toprule
-\textbf{Model} & \textbf{Projectile} & \textbf{Fluid} & \textbf{Collision} & \textbf{Elastic} & \textbf{Mean} \\
-\midrule
-GPT-4o (text) & 73.2 & 61.4 & 78.3 & 64.1 & 69.3 \\
-Claude 3.5 Sonnet & 76.8 & 65.2 & 81.4 & 68.3 & 72.9 \\
-DreamerV3 & 68.3 & 71.4 & 74.2 & 72.1 & 71.5 \\
-PHYRE & 79.4 & -- & 82.3 & -- & -- \\
-\textbf{Zen-World} & \textbf{89.2} & \textbf{83.4} & \textbf{91.7} & \textbf{84.8} & \textbf{87.3} \\
-\bottomrule
-\end{tabular}
-\caption{PhysBench Results (\%, higher is better)}
-\end{table}
+The capabilities below are those stated by the upstream Wan2.1 release \cite{wan2025report}; they
+are reproduced here with attribution. Zen-World does not add or independently re-measure these
+figures.
 
-\subsection{CausalQA}
+\begin{itemize}
+    \item \textbf{Output.} Generates short video clips at 480P ($832\times480$) and 720P
+    ($1280\times720$) from text prompts.
+    \item \textbf{Multilingual prompts and in-video text.} Accepts English and Chinese prompts;
+    described upstream as the first video model able to render both Chinese and English text in the
+    generated video.
+    \item \textbf{Model family.} The Wan2.1 release also includes a smaller T2V-1.3B model and
+    image-to-video (I2V), first-last-frame (FLF2V), and video-editing (VACE) variants; Zen-World
+    redistributes the T2V-14B variant.
+    \item \textbf{Efficiency (sibling model).} The upstream release reports that the smaller
+    T2V-1.3B model can generate a 5-second 480P clip using about 8.19~GB of VRAM, enabling
+    consumer-GPU use; the 14B model redistributed here is correspondingly heavier.
+    \item \textbf{Evaluation.} The upstream report states the 14B model was evaluated on an internal
+    suite of 1{,}035 prompts across 14 dimensions and that it is competitive with leading
+    open-source and commercial systems. We reproduce this claim as reported and do not restate
+    specific scores here.
+\end{itemize}
 
-CausalQA presents video clips of physical events with questions about causal structure:
-``What caused the glass to fall?'', ``Would the ball have reached the target if the ramp
-had been steeper?''
+\section{Integration into the Zen Stack}
 
-\begin{table}[H]
-\centering
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Model} & \textbf{Causal ID} & \textbf{Counterfactual} & \textbf{Intervention} & \textbf{Mean} \\
-\midrule
-GPT-4o + video & 74.3 & 61.2 & 68.4 & 68.0 \\
-Gemini 1.5 Pro & 76.1 & 63.4 & 70.2 & 69.9 \\
-CLEVRER-Base & 78.4 & 67.2 & 72.1 & 72.6 \\
-\textbf{Zen-World} & \textbf{84.2} & \textbf{79.8} & \textbf{82.3} & \textbf{82.1} \\
-\bottomrule
-\end{tabular}
-\caption{CausalQA Results (\%, higher is better)}
-\end{table}
+Zen-World's contribution is integration, not modeling. Specifically, Zen-World provides:
+\begin{itemize}
+    \item Zen-stack loading of the upstream Wan2.1-T2V-14B weights (DiT, Wan-VAE, umT5).
+    \item A consistent on-disk configuration and weights layout aligned with the Zen family.
+    \item A unified text-to-video inference interface consistent with other Zen models.
+\end{itemize}
+No architectural changes are made and the weights are not retrained. The example below illustrates
+the intended Zen-stack interface for text-to-video generation.
 
-The counterfactual category shows the largest gap (79.8\% vs. 67.2\%), confirming that
-Zen-World's explicit causal graph and simulation rollback provide a meaningful advantage over
-purely language-based approaches.
-
-\subsection{Physics Consistency Benchmark (PCB)}
-
-PCB is a novel benchmark we introduce: given a simulated trajectory, does the model's prediction
-satisfy physical conservation laws? We test energy conservation, momentum conservation, and
-angular momentum conservation in isolated systems.
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Model} & \textbf{Energy} & \textbf{Momentum} & \textbf{Ang. Mom.} & \textbf{Mean} \\
-\midrule
-Video prediction LSTM & 67.3 & 71.2 & 63.4 & 67.3 \\
-DreamerV3 & 78.4 & 82.1 & 74.3 & 78.3 \\
-\textbf{Zen-World} & \textbf{92.1} & \textbf{93.4} & \textbf{88.7} & \textbf{91.4} \\
-\bottomrule
-\end{tabular}
-\caption{Physics Consistency Benchmark (\% of predictions satisfying conservation laws)}
-\end{table}
-
-\subsection{Long-Horizon Prediction}
-
-We evaluate simulation accuracy as a function of prediction horizon (seconds ahead):
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lccc}
-\toprule
-\textbf{Horizon} & \textbf{Zen-World} & \textbf{DreamerV3} & \textbf{RSSM} \\
-\midrule
-0.5s & 94.2\% & 91.3\% & 87.4\% \\
-2.0s & 88.7\% & 79.2\% & 71.3\% \\
-10.0s & 76.4\% & 58.1\% & 44.2\% \\
-60.0s & 61.3\% & 31.4\% & 18.7\% \\
-\bottomrule
-\end{tabular}
-\caption{Long-Horizon Prediction Accuracy (\% states within 5\% error)}
-\end{table}
-
-\section{Applications}
-
-\subsection{Model-Based Planning for Robotics}
-
-Zen-World serves as the environment model in the Hanzo robotics planning stack. Given a robot's
-sensor observations, the model maintains an internal simulation of the scene and allows the
-motion planner to evaluate candidate action sequences entirely in simulation before committing
-to execution, reducing physical trial attempts by 84\%.
-
-\subsection{Scientific Simulation}
-
-Zen-World's molecular dynamics domain enables protein folding stability prediction and drug
-binding affinity estimation by simulating molecular-scale physical interactions.
-
-\subsection{Autonomous Driving Safety}
-
-In autonomous driving contexts, Zen-World is used to simulate counterfactual accident scenarios:
-``Would the collision have been avoided if the vehicle had braked 0.5s earlier?'' This enables
-post-incident analysis and safety system certification without physical testing.
-
-\section{Integration}
-
-\begin{lstlisting}[language=Python, caption=Zen-World Physics Simulation]
+\begin{lstlisting}[language=Python, caption=Zen-World text-to-video (packaging of Wan2.1-T2V-14B)]
 from zen import ZenWorld
-import numpy as np
 
-model = ZenWorld.from_pretrained("zenlm/zen-world-32b")
+# Loads the redistributed Wan2.1-T2V-14B weights (DiT + Wan-VAE + umT5).
+model = ZenWorld.from_pretrained("zenlm/zen-world")
 
-# Parse scene from image
-scene = model.parse_scene("scene.jpg")
-print(f"Detected {len(scene.entities)} objects")
-
-# Simulate 5 seconds forward
-trajectory = model.simulate(
-    scene=scene,
-    action={"push_object": "ball_1", "force": [2.0, 0.0, 0.0]},
-    duration_sec=5.0,
-    timestep_ms=50
+# Text-to-video generation.
+video = model.generate(
+    prompt="A red panda walking through a snowy bamboo forest, cinematic lighting",
+    resolution="720p",      # 1280x720; also "480p" (832x480)
+    num_frames=81,
+    fps=16,
 )
 
-# Counterfactual query
-cf_trajectory = model.counterfactual(
-    trajectory=trajectory,
-    intervention={"at_time": 0.5, "change_mass": {"entity": "ball_1", "new_mass": 5.0}}
-)
-
-print(f"Original final position: {trajectory.final_state.entities['ball_1'].position}")
-print(f"Counterfactual final: {cf_trajectory.final_state.entities['ball_1'].position}")
+video.save("output.mp4")
 \end{lstlisting}
 
 \section{Related Work}
 
-RSSM \cite{hafner2019learning} introduced latent dynamics models for model-based RL.
-DreamerV3 \cite{hafner2023mastering} demonstrated general applicability across diverse domains.
-PHYRE \cite{bakhtin2019phyre} established physical reasoning benchmarks. CLEVRER
-\cite{yi2019clevrer} introduced causal and counterfactual video question answering.
-Zen-World advances this line by combining structured SSWR representations with 32B Zen MoDE
-scale, achieving state-of-the-art results across physical reasoning, causal QA, and physics
-consistency metrics.
+Zen-World is a redistribution of Wan2.1 \cite{wan2025report}, which belongs to the broader line of
+diffusion-transformer video generators. The diffusion-transformer (DiT) backbone derives from the
+scalable transformer denoiser of Peebles and Xie \cite{peebles2023dit}. Flow matching, the training
+objective Wan2.1 uses in place of a discrete noise schedule, was introduced by Lipman et al.
+\cite{lipman2023flow}. The Wan technical report \cite{wan2025report} details the Wan-VAE 3D causal
+autoencoder, the umT5 conditioning, and the model family.
 
 \section{Conclusion}
 
-Zen-World demonstrates that world modeling at 32B scale with structured state representations
-(SSWR), explicit causal graph tracking, and simulation-based counterfactual reasoning produces
-substantially better physical understanding than purely learned end-to-end predictors.
-The 87.3\% PhysBench, 82.1\% CausalQA, and 91.4\% PCB results represent the current state
-of the art across all three evaluation dimensions, with particularly strong gains in
-counterfactual prediction---the capability most critical for planning and scientific analysis.
+Zen-World is the Zen stack's packaging of \textbf{Wan2.1-T2V-14B}, the Apache-2.0 text-to-video
+diffusion model released by Alibaba's Team Wan. The real system is a $\sim$14B Diffusion Transformer
+trained with flow matching, operating in the latent space of the Wan2.1 3D causal VAE and
+conditioned by the multilingual umT5 text encoder, producing 480P and 720P video from English or
+Chinese prompts. Zen's contribution is integration: loaders, configuration, and a unified inference
+interface. All architecture and capability statements in this report are attributed to the upstream
+Wan2.1 release, and no independent benchmark numbers are claimed.
 
 \begin{thebibliography}{10}
-\bibitem{pearl2009causality} J. Pearl, ``Causality: Models, Reasoning, and Inference,'' 2nd ed., Cambridge University Press, 2009.
-\bibitem{hafner2019learning} D. Hafner et al., ``Learning Latent Dynamics for Planning from Pixels,'' ICML, 2019.
-\bibitem{hafner2023mastering} D. Hafner et al., ``Mastering Diverse Domains through World Models,'' arXiv:2301.04104, 2023.
-\bibitem{bakhtin2019phyre} A. Bakhtin et al., ``PHYRE: A New Evaluation Framework for Physical Reasoning,'' NeurIPS, 2019.
-\bibitem{yi2019clevrer} K. Yi et al., ``CLEVRER: Collision Events for Video Representation and Reasoning,'' ICLR, 2020.
+\bibitem{wan2025report} Team Wan (Alibaba), ``Wan: Open and Advanced Large-Scale Video Generative Models,'' arXiv:2503.20314, 2025. Models and code: \url{https://github.com/Wan-Video/Wan2.1}; weights: \url{https://huggingface.co/Wan-AI/Wan2.1-T2V-14B} (Apache~2.0).
+\bibitem{lipman2023flow} Y. Lipman, R. T. Q. Chen, H. Ben-Hamu, M. Nickel, and M. Le, ``Flow Matching for Generative Modeling,'' ICLR, 2023. arXiv:2210.02747.
+\bibitem{peebles2023dit} W. Peebles and S. Xie, ``Scalable Diffusion Models with Transformers,'' ICCV, 2023. arXiv:2212.09748.
 \end{thebibliography}
 
 \end{document}
