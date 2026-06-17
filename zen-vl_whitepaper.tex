@@ -14,349 +14,224 @@
 \definecolor{zengreen}{RGB}{52,199,89}
 \hypersetup{colorlinks=true,linkcolor=zenblue,urlcolor=zenblue,citecolor=zenblue}
 
-\title{\textbf{Zen-VL: Vision-Language Understanding at 7B Scale}\\
-\large Technical Report v2025.01}
-\author{Antje Worring, Zach Kelling \\ Zen LM Research Team\\
+\title{\textbf{Zen-VL: A Packaging of the Qwen3-VL Series}\\
+\large Technical Note v2025.06}
+\author{Zen LM Research Team\\
 \texttt{research@zenlm.org}}
-\date{January 2025}
+\date{June 2025}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-We present \textbf{Zen-VL}, a 7 billion parameter vision-language model built on the Zen MoDE
-(Mixture of Distilled Experts) language backbone, extended with a high-resolution vision encoder
-and a dynamic tiling mechanism to support images up to 4096$\times$4096 pixels. Zen-VL processes
-multiple images per conversation turn, enabling document analysis, multi-image comparison, and
-chart understanding. Without task-specific fine-tuning, Zen-VL achieves strong performance on
-standard multimodal benchmarks: MMBench 81.3\%, MME 2148, MMMU 56.8\%, TextVQA 78.4\%, and
-DocVQA 88.2\%. The model's efficient 7B scale makes it suitable for deployment across cloud and
-on-premise environments requiring multimodal understanding alongside text generation.
+Zen-VL is \emph{not} a from-scratch model. It is a redistribution and packaging of the
+\textbf{Qwen3-VL} vision-language model series developed by the Qwen team at Alibaba Cloud
+and released under the Apache-2.0 license~\cite{qwen3vl}. The Zen-VL packaging targets the
+compact dense editions of that series --- \textbf{Qwen3-VL-4B} and \textbf{Qwen3-VL-8B}
+(each available in Instruct and reasoning-oriented ``Thinking'' editions) --- with the
+larger Mixture-of-Experts variants (30B-A3B and 235B-A22B) available upstream for
+higher-capacity deployments. This note documents the upstream architecture as published by
+its authors, records the provenance and license obligations, and describes the thin
+packaging layer (weight conversion, quantization, serving configuration) Zen LM applies. No
+architectural novelty, no separate pre-training run, and no independently produced benchmark
+results are claimed. For authoritative capability numbers, see the upstream model cards and
+the Qwen3-VL Technical Report~\cite{qwen3vl,qwen3vl4b,qwen3vlreport}.
 \end{abstract}
 
 \tableofcontents
 \newpage
 
 %% ─────────────────────────────────────────────────────────────────────────────
-\section{Introduction}
+\section{Provenance and Scope}
 
-Visual understanding integrated with language generation has emerged as a critical capability
-for real-world AI applications: reading charts in financial documents, analyzing scientific
-figures, answering questions about photographs, extracting structured data from scanned forms.
-Vision-language models (VLMs) \cite{radford2021clip, li2023blip2, liu2023llava} address this
-by combining a pretrained vision encoder with a language model backbone.
+Earlier internal drafts of this document described a homegrown 7B ``Zen MoDE (Mixture of
+Distilled Experts)'' backbone with a ViT-L/14 encoder, a bespoke dynamic-tiling scheme,
+a two-stage training recipe, and a set of benchmark tables presented as in-house results.
+That framing was inaccurate and has been removed. The artifact distributed as ``Zen-VL'' is
+a packaging of the Qwen3-VL series published by Alibaba Cloud's Qwen team~\cite{qwen3vl}.
+This note exists to attribute the work correctly and to make the redistribution terms
+explicit.
 
-Zen-VL builds on two foundations: (1) the Zen language backbone trained on 3T tokens, and (2)
-a large vision encoder pretrained via contrastive learning on image-text pairs. Key design
-decisions include:
+\textbf{Upstream models.} Qwen3-VL is the current-generation multimodal LLM series from the
+Qwen team~\cite{qwen3vlreport}. It spans dense models at 4B and 8B parameters and MoE
+variants at 30B-A3B and 235B-A22B, each offered in Instruct and ``Thinking''
+editions~\cite{qwen3vl4b}. Zen-VL packages the dense \textbf{4B} and \textbf{8B} editions as
+the compact entry points; the upstream MoE editions are documented separately and may be
+packaged under the Zen3-VL note.
 
-\begin{itemize}
-  \item \textbf{Dynamic tiling}: High-resolution images are decomposed into variable-size
-        tiles, allowing fine-grained perception of text within images up to 4096$\times$4096.
-  \item \textbf{Multi-image support}: The conversation schema supports arbitrary numbers of
-        images per turn, with interleaved image and text tokens, enabling document-level and
-        multi-panel analysis.
-  \item \textbf{Efficient visual projection}: A lightweight MLP projector maps visual tokens
-        to the language model's embedding space, minimizing added parameters while preserving
-        spatial information.
-  \item \textbf{Instruction tuning on multimodal data}: Zen-VL is fine-tuned on 2M high-quality
-        image-text instruction pairs spanning VQA, captioning, OCR, and document understanding.
-\end{itemize}
+\textbf{License.} The upstream weights are released under \textbf{Apache-2.0}. This is
+permissive and allows commercial use and redistribution, but a redistributor must preserve
+copyright and license notices, include the upstream \texttt{NOTICE} file if present, and
+state any modifications. Any Zen LM redistribution must ship the upstream \texttt{LICENSE}
+and attribution intact and must not misrepresent the model's origin.
+
+\textbf{Correction of model identity.} The ``7B Zen MoDE'' backbone, the ``307M ViT-L/14''
+encoder, the specific tiling configuration table, the ten-million-pair Stage-1 and
+two-million-pair Stage-2 training recipe, and all ``Zen-VL vs.\ Comp.\ A/B/C'' benchmark
+tables in earlier drafts were fabricated and do not describe these models. The actual
+artifacts are the Qwen3-VL-4B and Qwen3-VL-8B dense checkpoints.
+
+\textbf{What ``packaging'' means here.} Zen LM does not retrain or re-architect the model.
+The packaging layer is limited to weight-format conversion, optional post-training
+quantization, and serving configuration.
 
 %% ─────────────────────────────────────────────────────────────────────────────
-\section{Architecture}
+\section{Upstream Architecture (as published by Qwen)}
 
-\subsection{System Overview}
+The description below summarizes the architecture as documented by the upstream authors in
+the Qwen3-VL model cards and Technical Report~\cite{qwen3vl4b,qwen3vlreport}. It is
+reproduced for convenience and is \emph{not} a Zen LM contribution.
 
-Zen-VL consists of three components: (1) a vision encoder $E_v$, (2) a visual-language
-projector $P$, and (3) the Zen MoDE language decoder $D$. The forward pass is:
-
-\begin{equation}
-  y = D\!\left([\, P(E_v(I_1)),\; t_1,\; P(E_v(I_2)),\; t_2,\; \ldots \,]\right)
-\end{equation}
-
-where $I_k$ are image inputs, $t_k$ are text tokens, and the brackets denote interleaved
-concatenation in conversation order.
+\subsection{Model Family}
 
 \begin{table}[H]
 \centering
-\caption{Zen-VL component specifications.}
-\label{tab:arch}
-\begin{tabular}{llc}
+\caption{Qwen3-VL series as published upstream (Alibaba Cloud, Apache-2.0). Zen-VL packages
+the dense 4B/8B editions.}
+\label{tab:family}
+\begin{tabular}{lll}
 \toprule
-\textbf{Component} & \textbf{Specification} & \textbf{Parameters} \\
+\textbf{Upstream model} & \textbf{Type} & \textbf{Editions} \\
 \midrule
-Vision encoder      & ViT-L/14 at 448$\times$448 native & 307M \\
-Visual projector    & 2-layer MLP, hidden 4096 & 28M \\
-Language backbone   & Zen MoDE 7B & 7.2B \\
-\midrule
-Total               & & 7.5B \\
+Qwen3-VL-4B        & Dense        & Instruct, Thinking \\
+Qwen3-VL-8B        & Dense        & Instruct, Thinking \\
+Qwen3-VL-30B-A3B   & MoE          & Instruct, Thinking \\
+Qwen3-VL-235B-A22B & MoE          & Instruct, Thinking \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Vision Encoder}
+\subsection{Three-Module Structure}
 
-The vision encoder is a Vision Transformer (ViT) \cite{dosovitskiy2020vit} at the ViT-L/14
-scale, pretrained on 2B image-text pairs using a CLIP-style contrastive objective
-\cite{radford2021clip}. The native resolution of 448$\times$448 pixels produces a
-$(448/14)^2 = 1024$-token visual representation per tile in the patching scheme.
+Following the Qwen2.5-VL design, each Qwen3-VL model adopts a three-module structure: a
+ViT-based vision encoder, an MLP-based vision--language merger that projects visual features
+into the language embedding space, and the language model backbone (dense for the 4B/8B
+editions). Exact layer counts, hidden sizes, and patch configurations are defined by the
+upstream configuration files and are not restated or invented here.
 
-\subsection{Dynamic High-Resolution Tiling}
+\subsection{Named Architectural Features}
 
-Standard VLMs encode images at a fixed low resolution (e.g., 224$\times$224), losing fine
-detail needed for document understanding and dense text reading. Zen-VL implements a dynamic
-tiling scheme that:
+The upstream authors highlight several features shared across the Qwen3-VL
+series~\cite{qwen3vl4b}:
+
+\begin{itemize}
+  \item \textbf{Interleaved-MRoPE} --- multimodal rotary position embeddings with
+        full-frequency allocation over the time, width, and height axes.
+  \item \textbf{DeepStack} --- fusion of multi-level ViT features to capture fine-grained
+        visual detail and improve image--text alignment.
+  \item \textbf{Text--Timestamp Alignment} --- timestamp-grounded event localization for
+        stronger video temporal modeling.
+\end{itemize}
+
+\subsection{Context and Resolution}
+
+Per the upstream model cards, the Qwen3-VL series provides a native 256K-token context
+window, expandable to 1M tokens, with high-resolution image and video
+input~\cite{qwen3vl4b}. Multi-image conversations and video understanding are supported
+natively. Exact resolution handling is defined upstream.
+
+\subsection{Items Removed From Earlier Drafts}
+
+The following claims appeared in prior drafts and are \textbf{withdrawn} because they were
+not substantiated and were presented as in-house work: the 7B ``Zen MoDE'' backbone and its
+7.5B-total component table; the ViT-L/14 (307M) encoder spec and a 1024-token-per-tile
+patching claim; the specific dynamic-tiling configuration and visual-token-count tables; the
+Stage-1/Stage-2 training recipe with stated optimizer, batch size, and data counts; the SFT
+data-composition table; and \emph{all} evaluation tables (multimodal benchmarks, document
+understanding, high-resolution ablation, multi-image, and hallucination). These numbers were
+invented. Genuine capabilities belong to the upstream Qwen3-VL models.
+
+%% ─────────────────────────────────────────────────────────────────────────────
+\section{Packaging and Redistribution}
+
+\subsection{Conversion and Quantization}
+
+Zen LM converts the published Qwen3-VL-4B and Qwen3-VL-8B weights to the internal serving
+format and may apply post-training quantization for deployment, which is especially relevant
+for the edge-oriented 4B edition. These transforms are mechanical; they do not constitute a
+new training run and do not produce a new model. Where quantization is applied, the scheme
+and bit-width should be recorded alongside the artifact so downstream users understand any
+quality trade-off relative to the upstream checkpoint.
+
+\subsection{Attribution Requirements}
+
+Because the upstream license is Apache-2.0, every redistributed Zen-VL artifact must:
 
 \begin{enumerate}
-  \item Selects the optimal tile grid $\{r \times c\}$ for the input image's aspect ratio,
-        constrained to a maximum of $N_{\max}=12$ tiles plus one mandatory thumbnail.
-  \item Resizes the image to fill the selected grid at 448$\times$448 per tile.
-  \item Encodes each tile independently through the vision encoder.
-  \item Encodes a downsampled thumbnail (448$\times$448) of the full image for global context.
-  \item Concatenates tile tokens with the thumbnail and passes all through the projector.
+  \item Retain the upstream copyright and Apache-2.0 \texttt{LICENSE} text.
+  \item Include the upstream \texttt{NOTICE} file, if any, and not remove attribution.
+  \item State plainly that the model is a packaging of Qwen3-VL (4B/8B) by the Qwen team at
+        Alibaba Cloud, and describe any modifications (e.g.\ quantization).
+  \item Avoid any naming or marketing that implies the architecture or weights are original
+        Zen LM research.
 \end{enumerate}
 
-\begin{table}[H]
-\centering
-\caption{Dynamic tiling configurations by image resolution.}
-\label{tab:tiling}
-\begin{tabular}{lccc}
-\toprule
-\textbf{Input Resolution} & \textbf{Grid} & \textbf{Tiles} & \textbf{Visual tokens} \\
-\midrule
-448$\times$448 (standard)     & 1$\times$1 & 1    & 1{,}024 $+$ 256 \\
-896$\times$448 (landscape)    & 2$\times$1 & 2    & 2{,}048 $+$ 256 \\
-1{,}344$\times$1{,}344        & 3$\times$3 & 9    & 9{,}216 $+$ 256 \\
-4{,}096$\times$4{,}096 (max)  & 3$\times$4 & 12   & 12{,}288 $+$ 256 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Thumbnail tokens are downsampled to 256 by applying $2\times2$ average pooling over the
-ViT output before projection.
-
-\subsection{Visual-Language Projector}
-
-The projector is a two-layer MLP with GELU activation:
-
-\begin{equation}
-  P(v) = W_2 \cdot \text{GELU}(W_1 v + b_1) + b_2
-\end{equation}
-
-where $v \in \mathbb{R}^{1024}$ is the per-token ViT output and $P(v) \in \mathbb{R}^{4096}$
-matches the Zen backbone's hidden dimension. The projector is trained jointly during
-the visual instruction tuning phase.
-
-\subsection{Language Backbone}
-
-The language component is the Zen 7B model from the Zen MoDE family, initialized from the
-pretrained Zen checkpoint and further trained during visual instruction tuning. All language
-backbone parameters are unfrozen during VIT fine-tuning; only the vision encoder is frozen
-after visual pretraining.
-
 %% ─────────────────────────────────────────────────────────────────────────────
-\section{Training Methodology}
+\section{Evaluation: Use Upstream Numbers}
 
-\subsection{Stage 1: Visual Pretraining (Projector Alignment)}
+This note deliberately reports \textbf{no} Zen-produced benchmark scores. The Qwen team
+publishes Qwen3-VL evaluations on standard vision-language suites --- including general
+multimodal reasoning (e.g.\ MMMU, MMBench), document and OCR understanding (e.g.\ DocVQA,
+OCRBench, InfoVQA), chart and diagram tasks (e.g.\ ChartQA, AI2D), and object-hallucination
+evaluation (e.g.\ POPE, HallusionBench) --- in the official model cards and Technical
+Report~\cite{qwen3vl4b,qwen3vlreport}.
 
-In Stage 1, only the MLP projector is trained while the vision encoder and language backbone
-are frozen. Training data consists of 10M image-caption pairs drawn from web-scraped and
-curated sources. The objective is next-token prediction on captions conditioned on visual
-tokens. This stage aligns the visual token space with the language embedding space.
-
-Training details:
-\begin{itemize}
-  \item Optimizer: AdamW, LR $1 \times 10^{-3}$, cosine decay
-  \item Batch size: 2048 image-text pairs
-  \item Duration: 1 epoch ($\approx$5B visual tokens processed)
-  \item Images: resized to 448$\times$448, no tiling in Stage 1
-\end{itemize}
-
-\subsection{Stage 2: Visual Instruction Tuning}
-
-In Stage 2, the projector and language backbone are jointly trained on 2M high-quality
-multimodal instruction pairs. The vision encoder remains frozen. Dynamic tiling is enabled.
-
-\begin{table}[H]
-\centering
-\caption{Visual instruction tuning data composition.}
-\label{tab:sft_data}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Task Type} & \textbf{Samples} & \textbf{Fraction} \\
-\midrule
-Visual question answering  & 620{,}000 & 31.0\% \\
-Image captioning           & 400{,}000 & 20.0\% \\
-Document understanding     & 380{,}000 & 19.0\% \\
-OCR and text extraction    & 260{,}000 & 13.0\% \\
-Chart and diagram QA       & 200{,}000 & 10.0\% \\
-Multi-image comparison     & 100{,}000 &  5.0\% \\
-Science figure analysis    &  40{,}000 &  2.0\% \\
-\midrule
-Total                      & 2{,}000{,}000 & 100.0\% \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Training details:
-\begin{itemize}
-  \item Optimizer: AdamW, LR $2 \times 10^{-5}$, cosine decay to $2 \times 10^{-6}$
-  \item Batch size: 512 samples
-  \item Duration: 3 epochs
-  \item Dynamic tiling: up to 12 tiles per image
-\end{itemize}
-
-%% ─────────────────────────────────────────────────────────────────────────────
-\section{Evaluation}
-
-\subsection{Multimodal Benchmarks}
-
-\begin{table}[H]
-\centering
-\caption{Zen-VL benchmark results versus models of comparable scale.}
-\label{tab:benchmarks}
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Benchmark} & \textbf{Zen-VL (7B)} & \textbf{Comp.\ A (7B)} & \textbf{Comp.\ B (8B)} & \textbf{Comp.\ C (13B)} \\
-\midrule
-MMBench (EN)         & \textbf{81.3} & 79.4 & 77.8 & 80.6 \\
-MMBench (CN)         & \textbf{79.8} & 76.3 & 74.1 & 78.2 \\
-MME (total)          & \textbf{2148} & 2019 & 1987 & 2103 \\
-MME-P (perception)   & \textbf{1587} & 1502 & 1474 & 1543 \\
-MMMU (val, 0-shot)   & \textbf{56.8} & 54.1 & 52.3 & 55.7 \\
-\midrule
-TextVQA (val)        & \textbf{78.4} & 76.2 & 73.8 & 77.9 \\
-DocVQA (val)         & \textbf{88.2} & 84.6 & 81.3 & 86.4 \\
-ChartQA              & \textbf{83.4} & 79.8 & 76.4 & 81.7 \\
-AI2D               & \textbf{79.6} & 77.3 & 74.8 & 78.4 \\
-\midrule
-ScienceQA (IMG)      & 82.4 & 80.1 & 79.6 & \textbf{83.1} \\
-HallusionBench       & \textbf{48.2} & 44.7 & 42.3 & 46.8 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Document Understanding}
-
-Document understanding is a particularly demanding task requiring fine-grained text reading,
-layout understanding, and cross-region reasoning. We evaluate on industry-standard benchmarks.
-
-\begin{table}[H]
-\centering
-\caption{Document understanding benchmark results.}
-\label{tab:doc}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Benchmark} & \textbf{Zen-VL (7B)} & \textbf{Prior Best (7B class)} \\
-\midrule
-DocVQA (val)        & 88.2 & 86.4 \\
-DocVQA (test)       & 87.6 & 85.8 \\
-InfoVQA             & 72.3 & 69.8 \\
-OCRBench            & 82.4 & 79.3 \\
-Slide understanding & 74.1 & 70.6 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{High-Resolution Ablation}
-
-We ablate the dynamic tiling scheme against fixed-resolution baselines.
-
-\begin{table}[H]
-\centering
-\caption{Effect of dynamic tiling on document and text-heavy benchmarks.}
-\label{tab:tiling_ablation}
-\begin{tabular}{lccc}
-\toprule
-\textbf{Configuration} & \textbf{DocVQA} & \textbf{TextVQA} & \textbf{ChartQA} \\
-\midrule
-Fixed 224$\times$224       & 71.4 & 63.8 & 67.2 \\
-Fixed 448$\times$448       & 82.6 & 73.1 & 76.8 \\
-Dynamic tiling (max 6)     & 86.3 & 76.4 & 80.9 \\
-Dynamic tiling (max 12)    & 88.2 & 78.4 & 83.4 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The improvement from fixed 448px to dynamic tiling (max 12) is 5.6 points on DocVQA and 6.6
-points on ChartQA, confirming that high-resolution tiling is critical for text-dense tasks.
-
-\subsection{Multi-Image Evaluation}
-
-\begin{table}[H]
-\centering
-\caption{Multi-image benchmark performance.}
-\label{tab:multi_image}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Benchmark} & \textbf{Zen-VL (7B)} & \textbf{Competitor (13B)} \\
-\midrule
-BLINK (multi-image subset) & 58.4 & 56.1 \\
-Mantis (multi-image IQ50) & 62.3 & 59.8 \\
-MuMuQA                     & 71.6 & 68.4 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Hallucination}
-
-We evaluate object hallucination using POPE (adversarial setting) and HallusionBench.
-
-\begin{table}[H]
-\centering
-\caption{Hallucination evaluation.}
-\label{tab:hall}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Benchmark} & \textbf{Zen-VL (7B)} & \textbf{Competitor A (7B)} \\
-\midrule
-POPE (random)       & 88.3 & 86.7 \\
-POPE (popular)      & 87.1 & 85.4 \\
-POPE (adversarial)  & 85.9 & 83.2 \\
-HallusionBench      & 48.2 & 44.7 \\
-\bottomrule
-\end{tabular}
-\end{table}
+\textbf{Guidance for downstream reporting.} Cite upstream-reported numbers with explicit
+attribution to Qwen, and link to the model card for the specific size (4B or 8B). If Zen LM
+applies quantization, any re-measured scores should be reported as ``Qwen3-VL-4B/8B (Zen
+packaging, \textit{N}-bit)'' with the evaluation harness named, framed as a measurement of
+the upstream model under a deployment configuration --- never as the result of a distinct
+model.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section{Related Work}
 
-Vision-language models trace to contrastive pretraining between image and text encoders
-\cite{radford2021clip}. Subsequent work (BLIP-2 \cite{li2023blip2}, LLaVA \cite{liu2023llava})
-connected frozen vision encoders to language models via learned projectors. InternVL
-\cite{chen2023internvl} scaled the vision encoder and fine-tuned it alongside the language
-model. High-resolution support via tiling was introduced in LLaVA-HD and similar work;
-dynamic aspect-ratio tiling was explored in InternVL 1.5.
-
-Our work follows the dynamic tiling paradigm but applies it to the Zen MoDE language backbone,
-yielding competitive results with fewer language parameters than 13B-class competitors on
-document understanding tasks where high-resolution matters most.
+The relevant prior art is the upstream lineage itself: the Qwen-VL and Qwen2.5-VL line of
+vision-language models from Alibaba Cloud, of which Qwen3-VL is the current
+generation~\cite{qwen3vl4b,qwen3vlreport}. Contrastive vision-language
+pre-training~\cite{radford2021clip} and projector-based connection of frozen vision encoders
+to language models (BLIP-2~\cite{li2023blip2}, LLaVA~\cite{liu2023llava}) are foundational to
+the broader field; the Interleaved-MRoPE, DeepStack, and Text--Timestamp Alignment
+mechanisms used here are Qwen3-VL contributions.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section{Limitations}
 
-Zen-VL cannot process video (multiple sequential frames with temporal reasoning). Images
-must be provided as discrete inputs; streaming video analysis is not supported. Despite high
-DocVQA scores, performance on handwritten text and low-contrast scans lags typed print.
-Hallucination rates remain non-trivial on adversarial POPE; object co-occurrence biases
-from pretraining data are partially inherited. The 7B backbone limits complex multi-step
-visual reasoning compared to larger language backbones.
+The limitations of Zen-VL are the limitations of the upstream Qwen3-VL models it packages,
+as documented by their authors. Additionally, any post-training quantization applied during
+packaging may reduce quality relative to the upstream full-precision checkpoints; the degree
+depends on the chosen scheme and bit-width and should be measured and disclosed per artifact.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \section{Conclusion}
 
-Zen-VL delivers strong multimodal understanding at the 7B parameter scale through a
-combination of a high-capacity vision encoder, dynamic tiling for high-resolution images,
-and multi-image conversation support built on the Zen MoDE language backbone.
-Benchmark results---MMBench 81.3\%, MME 2148, DocVQA 88.2\%, TextVQA 78.4\%---
-demonstrate competitive performance with larger-scale competitors, particularly on
-document and text-heavy visual tasks where high resolution is critical. Zen-VL serves
-as the multimodal entry point for the Zen family, enabling visual understanding to be
-combined with Zen's language generation capabilities in production deployments.
+``Zen-VL'' denotes a packaged redistribution of Alibaba Cloud's Apache-2.0 Qwen3-VL dense
+models (4B and 8B), not an independent model. The honest description of the work is:
+convert, optionally quantize, serve, and attribute. All architectural credit and all
+capability claims belong to the upstream Qwen3-VL authors and should be cited to them.
+
+\section*{Acknowledgments}
+
+We acknowledge the Qwen team at Alibaba Cloud as the authors of the Qwen3-VL series, the
+models packaged and redistributed here under the Apache-2.0 license.
 
 %% ─────────────────────────────────────────────────────────────────────────────
 \begin{thebibliography}{99}
+
+\bibitem{qwen3vl}
+Qwen Team, Alibaba Cloud,
+``Qwen3-VL,'' GitHub repository, 2025.
+\url{https://github.com/QwenLM/Qwen3-VL}
+
+\bibitem{qwen3vl4b}
+Qwen Team, Alibaba Cloud,
+``Qwen3-VL-4B-Instruct,'' Hugging Face model card, 2025.
+\url{https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct}
+
+\bibitem{qwen3vlreport}
+Qwen Team, Alibaba Cloud,
+``Qwen3-VL Technical Report,'' arXiv:2511.21631, 2025.
+\url{https://arxiv.org/abs/2511.21631}
 
 \bibitem{radford2021clip}
 A.~Radford et al., ``Learning Transferable Visual Models From Natural Language Supervision,''
@@ -372,22 +247,6 @@ H.~Liu et al., ``Visual Instruction Tuning,'' \textit{NeurIPS}, 2023.
 \bibitem{dosovitskiy2020vit}
 A.~Dosovitskiy et al., ``An Image is Worth 16x16 Words: Transformers for Image Recognition
 at Scale,'' \textit{ICLR}, 2021.
-
-\bibitem{chen2023internvl}
-Z.~Chen et al., ``InternVL: Scaling up Vision Foundation Models and Aligning for Generic
-Visual-Linguistic Tasks,'' \textit{CVPR}, 2024.
-
-\bibitem{liu2024llava15}
-H.~Liu et al., ``Improved Baselines with Visual Instruction Tuning,''
-\textit{arXiv:2310.03744}, 2024.
-
-\bibitem{ainslie2023gqa}
-J.~Ainslie et al., ``GQA: Training Generalized Multi-Query Transformer Models,''
-\textit{EMNLP}, 2023.
-
-\bibitem{ouyang2022instructgpt}
-L.~Ouyang et al., ``Training Language Models to Follow Instructions with Human Feedback,''
-\textit{NeurIPS}, 2022.
 
 \end{thebibliography}
 

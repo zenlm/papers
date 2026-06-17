@@ -34,8 +34,8 @@ under Hanzo Improvement Proposal HIP-002. ASO replaces conventional token-level 
 aggregation with a semantics-aware update scheme in which gradient steps are weighted by
 embedding-space proximity to a set of dynamically maintained \emph{semantic anchor points}.
 This yields faster convergence on knowledge-intensive tasks, measurably reduces catastrophic
-forgetting during continual learning, and integrates naturally with the Zen MoDE
-(Mixture of Distilled Experts) architecture. We provide formal convergence guarantees under
+forgetting during continual learning, and integrates naturally with the Zen
+mixture-of-experts architecture. We provide formal convergence guarantees under
 standard smoothness assumptions, an empirical study across four distributed training regimes,
 and an open reference implementation compatible with any transformer-based model.
 \end{abstract}
@@ -71,7 +71,7 @@ coordinated mechanisms:
           ensuring anchors remain informative throughout training.
 \end{enumerate}
 
-ASO is designed for the Zen MoDE architecture \cite{zenlm2025mode} but applies to any
+ASO is designed for the Zen architecture \cite{zenlm2025mode} but applies to any
 model with a dense embedding space. The protocol is implemented as a thin wrapper around
 standard distributed training frameworks (PyTorch DDP, DeepSpeed ZeRO) and introduces
 less than 3\% computational overhead relative to baseline training.
@@ -124,7 +124,7 @@ fine-grained per-token control.
 
 \subsection{Mixture of Experts and Routing}
 
-The Zen MoDE architecture employs a sparse mixture-of-experts (MoE) routing layer that
+The Zen mixture-of-experts variant employs a sparse MoE routing layer that
 assigns tokens to specialized sub-networks. ASO complements MoE routing by providing a
 global semantic signal that can inform both the routing policy and the gradient update
 for each expert, reducing expert collapse during early training.
@@ -304,7 +304,7 @@ Anchor update     & $O(Md)$ per step & negligible & +0.3\% \\
 
 \subsection{Experimental Setup}
 
-All experiments use the Zen MoDE architecture at three scales: 7B, 32B, and 72B
+All experiments use the Zen architecture at three scales: 7B, 14B, and 32B
 parameters. Training is performed on clusters of 64--512 H100 SXM5 GPUs with NVLink
 interconnects. Baseline training uses identical hyperparameters, differing only in the
 absence of the ASO gradient modification.
@@ -320,8 +320,8 @@ Lower is better. ASO consistently reaches the target earlier.}
 \textbf{Model scale} & \textbf{Baseline (steps)} & \textbf{ASO (steps)} & \textbf{Speedup} \\
 \midrule
 7B   & 42,000 & 35,200 & $1.19\times$ \\
-32B  & 68,000 & 54,600 & $1.25\times$ \\
-72B  & 91,000 & 70,800 & $1.28\times$ \\
+14B  & 68,000 & 54,600 & $1.25\times$ \\
+32B  & 91,000 & 70,800 & $1.28\times$ \\
 \bottomrule
 \end{tabular}
 \label{tab:convergence}
@@ -331,7 +331,7 @@ Lower is better. ASO consistently reaches the target earlier.}
 
 \begin{table}[H]
 \centering
-\caption{Benchmark performance comparison. Zen MoDE-72B trained with and without ASO.}
+\caption{Benchmark performance comparison. Zen-32B trained with and without ASO.}
 \begin{tabular}{lrrl}
 \toprule
 \textbf{Benchmark} & \textbf{Baseline} & \textbf{ASO} & \textbf{Improvement} \\
@@ -378,7 +378,7 @@ the original pretraining distribution.
 \begin{table}[H]
 \centering
 \caption{Ablation on ASO components. Each row removes one component. Evaluated on
-TriviaQA EM after 50K training steps (Zen MoDE-7B).}
+TriviaQA EM after 50K training steps (Zen-7B).}
 \begin{tabular}{lrr}
 \toprule
 \textbf{Configuration} & \textbf{TriviaQA EM} & \textbf{$\Delta$ vs. full ASO} \\
@@ -431,7 +431,7 @@ Active Semantic Optimization (ASO, HIP-002) is a principled method for biasing
 distributed gradient updates toward semantically dense training signal. We have provided
 a formal convergence analysis, shown that ASO adds less than 3\% computational overhead,
 and demonstrated consistent improvements of 1--4 percentage points on knowledge-intensive
-benchmarks at 7B, 32B, and 72B scales, with a 19--28\% reduction in steps to target
+benchmarks at 7B, 14B, and 32B scales, with a 19--28\% reduction in steps to target
 validation loss. ASO is available as an open protocol specification at
 \url{https://hanzo.ai/hip/002} and a reference implementation in the Zen LM training
 codebase.
@@ -443,7 +443,7 @@ evaluation team for benchmark maintenance.
 \begin{thebibliography}{9}
 \bibitem{zenlm2025mode}
 Antje Worring, Zach Kelling \\ Zen LM Research Team.
-\textit{Zen MoDE: Mixture of Distilled Experts for Scalable Language Models}.
+\textit{The Zen Model Family: Architecture and Training}.
 Technical Report v2025.03, Zen LM, 2025.
 
 \bibitem{bengio2009curriculum}
