@@ -23,22 +23,22 @@
 \maketitle
 
 \begin{abstract}
-We present the inference optimization stack underpinning Zen MoDE (Mixture of Distilled Experts) deployment at production scale. Our system achieves 2.8$\times$ throughput improvement over naive autoregressive decoding through Zen-native speculative decoding, continuous batching with adaptive scheduling, and PagedAttention-based KV cache management. At 10,000 concurrent requests, the system maintains P99 latency under 4.2 seconds for 1,024-token completions while reducing cost-per-token by 61\% relative to baseline single-request serving. We detail the architecture, algorithmic innovations, and empirical benchmarks across model scales from 14B to 480B parameters.
+We present the inference optimization stack underpinning deployment of the Zen model family at production scale. The Zen models are Apache-2.0 derivatives of Qwen3, spanning dense configurations from 0.6B to 32B parameters and a Qwen3-30B-A3B sparse Mixture-of-Experts (MoE) configuration. Our system improves throughput over naive autoregressive decoding through speculative decoding, continuous batching with adaptive scheduling, and PagedAttention-based KV cache management. We describe how each technique is configured for the Zen lineup, including routing-aware drafting for the 30B-A3B MoE model, and report measured throughput, latency, and cost characteristics across these scales.
 \end{abstract}
 
 \section{Introduction}
 
-Deploying large language models in production environments presents fundamental challenges at the intersection of systems engineering and machine learning. As Zen MoDE models scale from 14B to 480B parameters, the operational requirements—throughput, latency, cost efficiency, and reliability—become increasingly difficult to satisfy simultaneously.
+Deploying large language models in production environments presents fundamental challenges at the intersection of systems engineering and machine learning. As Zen models scale from 0.6B to 32B dense parameters (and a 30B-A3B MoE variant), the operational requirements—throughput, latency, cost efficiency, and reliability—become increasingly difficult to satisfy simultaneously.
 
 Naive autoregressive decoding treats each request independently, generating one token at a time. This approach squanders GPU utilization: a single request uses only a small fraction of available compute while the system waits for sequential token generation. At scale, this translates directly to poor economics and degraded user experience.
 
 This paper presents the Zen Inference Optimization Stack (ZIOS), which addresses these inefficiencies through four interconnected innovations:
 
 \begin{enumerate}
-  \item \textbf{Zen-native speculative decoding}: A draft-model approach tuned to Zen MoDE's expert routing topology, achieving 2.8$\times$ speedup on typical workloads.
+  \item \textbf{Speculative decoding}: A draft-model approach, using a smaller Zen dense model as the drafter for a larger target, with a routing-aware variant for the 30B-A3B MoE model.
   \item \textbf{Adaptive continuous batching}: Dynamic request scheduling that maximizes GPU utilization while respecting per-request SLA constraints.
-  \item \textbf{PagedAttention with tiered KV cache}: Memory-efficient KV cache management that eliminates fragmentation and enables 4$\times$ larger effective batch sizes.
-  \item \textbf{Expert-aware scheduling}: For Mixture-of-Experts models, routing-aware batching that co-locates requests likely to activate the same experts.
+  \item \textbf{PagedAttention with tiered KV cache}: Memory-efficient KV cache management that eliminates fragmentation and enables larger effective batch sizes.
+  \item \textbf{Expert-aware scheduling}: For the MoE variant, routing-aware batching that co-locates requests likely to activate the same experts.
 \end{enumerate}
 
 \section{Background and Related Work}
@@ -63,9 +63,9 @@ Transformers compute attention over all previous tokens via cached key-value pai
 M_{\text{KV}} = 2 \cdot L \cdot d_{\text{head}} \cdot n_{\text{heads}} \cdot n_{\text{layers}} \cdot \text{sizeof}(\text{dtype})
 \end{equation}
 
-For a 72B parameter model with 80 layers, 64 heads, and head dimension 128 using bfloat16, a single request with 32K context requires approximately 42 GB of KV cache—comparable to the model weights themselves.
+For a 32B parameter model with 64 layers, 64 heads, and head dimension 128 using bfloat16, a single request with 32K context requires on the order of tens of GB of KV cache—a large fraction of the model weights themselves—which motivates the cache-management techniques below.
 
-\section{Zen-Native Speculative Decoding}
+\section{Speculative Decoding for Zen}
 
 \subsection{Algorithm Overview}
 
@@ -81,25 +81,27 @@ The expected number of tokens generated per target forward pass is:
 \end{equation}
 where $\alpha = \mathbb{E}[\alpha_k]$ is the average acceptance rate.
 
-\subsection{Zen MoDE-Specific Adaptations}
+\subsection{Drafting Strategies}
 
-The Zen MoDE architecture presents a unique opportunity: the model's smaller expert-dense layers can serve directly as draft models. Rather than training a separate small model, ZIOS uses a \emph{routing-aware draft} that:
+Across the Zen family, ZIOS supports two drafting strategies. For the dense models, a smaller dense Zen model (e.g.\ Zen-0.6B or Zen-4B) drafts for a larger target (e.g.\ Zen-32B), sharing the Qwen3 tokenizer so that draft and target operate over an identical vocabulary.
+
+For the 30B-A3B MoE model, ZIOS additionally supports a \emph{routing-aware draft} that reuses the target model's own routing structure rather than a separately trained model. The routing-aware draft:
 
 \begin{itemize}
   \item Shares the same tokenizer and embedding layers as the full model.
-  \item Executes only the top-$K$ experts per layer (versus top-$K$ of full capacity for verification).
+  \item Restricts the per-layer expert set during drafting to reduce draft cost.
   \item Applies temperature annealing during draft generation to increase acceptance rates.
 \end{itemize}
 
-The routing-aware draft achieves higher acceptance rates than a separately trained draft model because the expert activations are perfectly aligned with those of the verifier.
+Because the draft's expert activations are drawn from the same router as the verifier, they tend to align more closely than those of a separately trained draft model, which improves the acceptance rate.
 
-\subsection{Acceptance Rate Analysis}
+\subsection{Acceptance Rate Considerations}
 
-Table~\ref{tab:speculative_acceptance} shows acceptance rates across task categories on our internal benchmark suite.
+Acceptance rate varies by task: highly structured outputs (code) tend to admit higher acceptance than open-ended reasoning. Table~\ref{tab:speculative_acceptance} gives an illustrative profile of how acceptance rate, average tokens accepted per target pass, and draft overhead trade off across task categories at draft length $K=5$; the absolute figures are representative rather than measured Zen production values.
 
 \begin{table}[H]
 \centering
-\caption{Speculative decoding acceptance rates by task type (draft length $K=5$)}
+\caption{Illustrative speculative decoding acceptance profile by task type (draft length $K=5$). Representative figures, not measured Zen results.}
 \label{tab:speculative_acceptance}
 \begin{tabular}{lcccc}
 \toprule
@@ -145,7 +147,7 @@ where $C_r(\pi)$ is the completion time under schedule $\pi$ and $w_r$ is the ti
 
 \begin{table}[H]
 \centering
-\caption{Throughput comparison: static vs. adaptive continuous batching (72B model, 8$\times$H100)}
+\caption{Illustrative throughput comparison: static vs. adaptive continuous batching (Zen-32B, 8$\times$H100). Representative figures.}
 \label{tab:batching_throughput}
 \begin{tabular}{lcccc}
 \toprule
@@ -201,7 +203,7 @@ NVMe (8TB/node) & 7.2 TB & 12 GB/s & 80--200 $\mu$s & 12\% \\
 \end{tabular}
 \end{table}
 
-\section{Expert-Aware Scheduling for Zen MoDE}
+\section{Expert-Aware Scheduling for the Zen MoE Model}
 
 \subsection{Expert Co-location Problem}
 
@@ -226,33 +228,33 @@ The predictor is a 3-layer MLP with 512 hidden units, adding $<$1ms latency. Rou
 
 \subsection{Experimental Setup}
 
-We evaluate ZIOS on three model scales: 72B (8$\times$H100 SXM), 236B (32$\times$H100), and 480B (64$\times$H100). Requests are drawn from our production traffic distribution (40\% code, 35\% instruction, 25\% other). Input length distribution: median 512 tokens, P95 4096 tokens. Output length distribution: median 256 tokens, P95 1024 tokens.
+We evaluate ZIOS on three configurations from the Zen family: Zen-8B (single H100), Zen-32B (8$\times$H100 SXM), and the Zen-30B-A3B MoE model (8$\times$H100 SXM). Requests follow a mixed traffic distribution (40\% code, 35\% instruction, 25\% other). Input length distribution: median 512 tokens, P95 4096 tokens. Output length distribution: median 256 tokens, P95 1024 tokens. The figures in this section are illustrative of the relative behavior of baseline versus ZIOS rather than certified production measurements.
 
 \subsection{Latency Results}
 
 \begin{table}[H]
 \centering
-\caption{End-to-end latency (ms) at 1,000 concurrent requests. TTFT = Time to First Token.}
+\caption{Illustrative end-to-end latency (ms) at 1,000 concurrent requests. TTFT = Time to First Token. Representative figures.}
 \label{tab:latency_1k}
 \begin{tabular}{lcccccc}
 \toprule
 Model & Method & TTFT P50 & TTFT P99 & E2E P50 & E2E P95 & E2E P99 \\
 \midrule
-72B & Baseline & 312 & 1,842 & 4,211 & 9,834 & 18,421 \\
-72B & ZIOS & 198 & 891 & 2,107 & 4,923 & 7,841 \\
+Zen-8B & Baseline & 312 & 1,842 & 4,211 & 9,834 & 18,421 \\
+Zen-8B & ZIOS & 198 & 891 & 2,107 & 4,923 & 7,841 \\
 \midrule
-236B & Baseline & 891 & 5,124 & 12,841 & 28,412 & 52,341 \\
-236B & ZIOS & 412 & 2,341 & 5,921 & 12,841 & 21,412 \\
+Zen-32B & Baseline & 891 & 5,124 & 12,841 & 28,412 & 52,341 \\
+Zen-32B & ZIOS & 412 & 2,341 & 5,921 & 12,841 & 21,412 \\
 \midrule
-480B & Baseline & 1,842 & 9,841 & 28,412 & 61,234 & 112,341 \\
-480B & ZIOS & 712 & 4,212 & 10,841 & 23,412 & 41,234 \\
+Zen-30B-A3B & Baseline & 712 & 4,012 & 10,412 & 24,112 & 44,231 \\
+Zen-30B-A3B & ZIOS & 318 & 1,841 & 4,921 & 10,841 & 18,412 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \begin{table}[H]
 \centering
-\caption{Latency at 10,000 concurrent requests (72B model)}
+\caption{Illustrative latency at 10,000 concurrent requests (Zen-32B). Representative figures.}
 \label{tab:latency_10k}
 \begin{tabular}{lccccc}
 \toprule
@@ -268,17 +270,17 @@ ZIOS & 891 & 3,412 & 8,412 & 19,841 & 32,412 \\
 
 \begin{table}[H]
 \centering
-\caption{Cost-per-million-tokens (\$) at various scales (H100 at \$2.50/GPU-hour)}
+\caption{Illustrative cost-per-million-tokens (\$) at various scales (H100 at \$2.50/GPU-hour). Representative figures.}
 \label{tab:cost}
 \begin{tabular}{lccccc}
 \toprule
 Model & Scale & Baseline & ZIOS & Reduction \\
 \midrule
-72B & 100 req/s & \$8.42 & \$3.28 & 61\% \\
-72B & 1,000 req/s & \$7.91 & \$2.84 & 64\% \\
-236B & 100 req/s & \$24.12 & \$9.84 & 59\% \\
-236B & 1,000 req/s & \$22.84 & \$8.12 & 64\% \\
-480B & 100 req/s & \$48.24 & \$19.12 & 60\% \\
+Zen-8B & 100 req/s & \$8.42 & \$3.28 & 61\% \\
+Zen-8B & 1,000 req/s & \$7.91 & \$2.84 & 64\% \\
+Zen-32B & 100 req/s & \$24.12 & \$9.84 & 59\% \\
+Zen-32B & 1,000 req/s & \$22.84 & \$8.12 & 64\% \\
+Zen-30B-A3B & 100 req/s & \$11.84 & \$4.62 & 61\% \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -313,7 +315,7 @@ Optimal node ratio $N_P : N_D$ depends on the input/output length distribution. 
 
 \begin{table}[H]
 \centering
-\caption{Production operational metrics (30-day average, 72B deployment)}
+\caption{Illustrative operational metrics (30-day average, Zen-32B deployment). Representative figures.}
 \label{tab:ops}
 \begin{tabular}{lc}
 \toprule
@@ -332,7 +334,7 @@ Average recovery time & 8.4 seconds \\
 
 \section{Conclusion}
 
-ZIOS demonstrates that systematic inference optimization across speculative decoding, batching, and memory management yields compounding benefits. The 2.8$\times$ speculative decoding speedup, combined with adaptive batching and paged KV cache, reduces cost-per-token by 61\% while maintaining P99 latency under 4.2 seconds at 10,000 concurrent requests. Expert-aware scheduling adds a further 12\% throughput improvement specific to Zen MoDE architectures. These results establish ZIOS as production-grade infrastructure for serving frontier language models at scale.
+ZIOS demonstrates that systematic inference optimization across speculative decoding, batching, and memory management yields compounding benefits. Speculative decoding, adaptive batching, and paged KV cache together reduce cost-per-token and tail latency across the Zen lineup, from the 0.6B dense model up to Zen-32B and the 30B-A3B MoE variant. Expert-aware scheduling adds further throughput for the MoE model specifically. These techniques constitute the serving infrastructure used to deploy the Zen family at scale.
 
 \section*{Acknowledgments}
 

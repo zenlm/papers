@@ -63,10 +63,15 @@
 \maketitle
 
 \begin{abstract}
-We present \textbf{Zen5}, the fifth generation of the Zen AI model family. Zen5 is delivered as three
-coordinated artifacts. First, the \emph{Zen5 inference engine}, a fork of antirez's \texttt{ds4} runtime,
-serves the 284B-parameter DeepSeek V4 Flash mixture-of-experts model at \texttt{IQ2\_XXS}/\texttt{Q2\_K}
-asymmetric quantization on a single 128 GB Apple Silicon machine. The engine reaches \textbf{27.30 tok/s
+\textbf{Zen5} is not an independently trained model and not a native ``fifth generation'' of a Zen
+foundation-model lineage. The Zen5 \emph{model} is a downstream repackaging of DeepSeek's open-weight
+\textbf{DeepSeek V4 Flash} \cite{deepseekv4flash} (MIT) distributed as quantized GGUF; there is no
+separate ``zen-5'' base model with its own weights, and any \texttt{zenlm/zen-5} base repository is a
+placeholder---the only weights that exist are the DeepSeek V4 Flash GGUF. What we contribute is
+packaging, behavioral post-training, and a multimodal routing layer, delivered as three coordinated
+artifacts. First, the \emph{Zen5 inference engine}, a fork of antirez's \texttt{ds4} runtime
+\cite{antirez-ds4} (MIT), serves the 284B-parameter DeepSeek V4 Flash mixture-of-experts model at
+\texttt{IQ2\_XXS}/\texttt{Q2\_K} asymmetric quantization on a single 128 GB Apple Silicon machine. The engine reaches \textbf{27.30 tok/s
 prefill and 8.93--26.68 tok/s generation} depending on prompt length, with a 1M-token context ceiling
 and an on-disk SHA1-keyed KV cache that survives session and process restart. Second, a
 \emph{behavioral post-training pipeline} consisting of (i) single-direction activation ablation against
@@ -76,11 +81,12 @@ does not over-refuse on legitimate dual-use prompts. Third, a \emph{multimodal r
 existing hanzoai/zen dynamic-router architecture so that Zen5 acts as the reasoning core while sibling
 experts --- Zen-VL, Zen-3D, Zen-Foley, Zen-Musician, Zen-Video, and the Jin diffusion-transformer family ---
 handle vision, depth, audio, music, video, and image generation, all colocated inside one
-\texttt{hanzo-engine} process. As a forward research direction we introduce \textbf{MoDE} (Mixture of
-Diverse Experts), a training-time diversity regularizer for the Jin diffusion MoE that specializes
-experts across denoising steps and modality-specific latent subspaces for unified multimodal generation.
-Zen5 ships as alpha-quality code under MIT, with full upstream attribution to \texttt{antirez/ds4} and
-\texttt{ggml-org/llama.cpp}.
+\texttt{hanzo-engine} process. As a forward research \emph{proposal} (not a shipped or evaluated
+component) we describe \textbf{MoDE} (Mixture of Diverse Experts), a training-time diversity regularizer
+for a diffusion MoE; the name refers to this proposed regularizer and is unrelated to any base-model
+architecture. Zen5 ships as alpha-quality packaging code under MIT, with attribution to DeepSeek for the
+V4 Flash weights (MIT) \cite{deepseekv4flash} and to \texttt{antirez/ds4} \cite{antirez-ds4} and
+\texttt{ggml-org/llama.cpp} \cite{llamacpp} for the engine lineage.
 \end{abstract}
 
 \tableofcontents
@@ -208,6 +214,12 @@ These names are symlinks in the working tree to the upstream binary names (\text
 \texttt{ds4-bench}) so that upstream pulls apply cleanly. The Zen5 brand affects packaging, not source.
 
 \subsection{Quantization}
+
+\textbf{The Zen5 weights are the DeepSeek V4 Flash weights, quantized.} We do not train or distill a
+distinct model; ``Zen5'' at the weight level is the upstream DeepSeek V4 Flash checkpoint
+\cite{deepseekv4flash} converted to GGUF and quantized with the scheme below, optionally with the
+behavioral post-training of Section~\ref{sec:posttrain} applied as a small weight delta. There is no
+independent zen-5 pretraining run and no separate zen-5 weight set.
 
 DeepSeek V4 Flash at \texttt{IQ2\_XXS}/\texttt{Q2\_K} occupies approximately 81 GB on disk, while
 preserving practical agent and tool-calling quality. The asymmetric quantization scheme is critical:
@@ -395,10 +407,13 @@ $\geq$ 35\% SWE-Bench-Lite agentic, with no drop on MT-Bench.
 
 \subsection{Architectural Position}
 
-The hanzoai/zen \emph{Spatially-Aware Dynamic Routing} architecture \cite{hanzoai-zen} predates Zen5
-and defines a router that connects specialized expert models for vision, language, codegen,
-multimodal reasoning, and 3D spatial inputs. Zen5 enters this architecture as the
-\emph{language-and-reasoning expert}, replacing the previously-routed DeepSeek-V3 and Qwen3 entries.
+The hanzoai/zen \emph{Spatially-Aware Dynamic Routing} architecture \cite{hanzoai-zen} defines a router
+that connects specialized expert models for vision, language, codegen, multimodal reasoning, and 3D
+spatial inputs. In the integration described here, Zen5 (i.e.\ the DeepSeek V4 Flash repackage) is
+intended to serve as the \emph{language-and-reasoning expert}. The sibling experts named below are
+documented in their own reports; several are themselves built on upstream open models rather than
+trained from scratch, and the routing integration is a design described here rather than a shipped,
+benchmarked system (Section~\ref{sec:experiments} marks routing evaluation as pending).
 
 \begin{figure}[H]
 \centering
@@ -587,8 +602,8 @@ production routing decisions. We will release a privacy-respecting export protoc
 can opt into contributing routing traces.
 
 \paragraph{MoDE at scale.} A 30B-active MoDE-Jin variant is the natural follow-on to the 1.5B
-ablation reported in Section~\ref{sec:mode}. Hardware permitting, we will publish in a follow-up
-whitepaper.
+ablation \emph{proposed} in Section~\ref{sec:mode}. That ablation has not been run; hardware
+permitting, we will report it (and any scale-up) in a follow-up whitepaper.
 
 \section{Conclusion}
 

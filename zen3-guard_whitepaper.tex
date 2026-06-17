@@ -13,7 +13,8 @@
 \definecolor{zenblue}{RGB}{41,121,255}
 \hypersetup{colorlinks=true,linkcolor=zenblue,urlcolor=zenblue,citecolor=zenblue}
 
-\title{\textbf{Zen3-Guard: Third-Generation Multilingual Content Safety Model}\\
+\title{\textbf{Zen3-Guard: A Packaging of IBM Granite Guardian 8B\\
+for the Zen Model Family}\\
 \large Technical Whitepaper v2025.06}
 \author{Zach Kelling \\ Zen LM Research Team\\
 \texttt{research@zenlm.org}\\
@@ -24,16 +25,22 @@
 \maketitle
 
 \begin{abstract}
-Zen3-Guard is a dedicated 8B parameter safety classification model for real-time content
-moderation, providing high-accuracy detection of harmful content across 100+ languages
-with inference latency suitable for production API deployments. Built on the Zen MoDE
-(Mixture of Distilled Experts) architecture with a safety-specialized expert cluster
-configuration, Zen3-Guard achieves ToxiGen 99.2\%, HatEval 97.8\%, OffComEval 96.4\%,
-and multilingual macro-F1 of 0.968 across all supported languages. At 8B parameters,
-the model delivers sub-5ms classification latency per request when batch-optimized on
-A10G GPU hardware, enabling real-time moderation of high-throughput API deployments.
-The model is designed as a drop-in safety layer for all Zen family models, configurable
-to enforce organization-specific content policies through a policy injection interface.
+Zen3-Guard is a repackaging of IBM's \textbf{Granite Guardian 8B} safety model, deployed
+as the content-safety layer for the Zen model family. It is \emph{not} a from-scratch
+model: it is the openly released, Apache-2.0 licensed \texttt{ibm-granite/granite-guardian}
+8B guardrail produced by IBM Research, which is itself a supervised fine-tune of the dense,
+decoder-only IBM Granite 3.x 8B Instruct base model (\texttt{GraniteForCausalLM}). Granite
+Guardian classifies a user prompt and/or assistant response against a configurable risk
+definition and emits a \texttt{Yes}/\texttt{No} verdict together with a probability of harm
+derived from the next-token logits. The risk taxonomy, aligned with the IBM AI Risk Atlas,
+spans harmful content (harm, social bias, profanity, sexual content, unethical behavior,
+violence, jailbreaking) as well as retrieval-augmented-generation faithfulness risks
+(context relevance, groundedness, answer relevance). IBM reports an aggregate AUC of
+\textbf{0.871} on harmful-content benchmarks and \textbf{0.854} on RAG-hallucination
+benchmarks for Granite Guardian 3.0 8B~\cite{graniteguardian}. This document describes how
+the upstream model is integrated as a drop-in safety filter for Zen deployments; all model
+weights, training, and reported metrics are IBM's and are cited as such. We add no
+benchmark claims of our own.
 \end{abstract}
 
 \tableofcontents
@@ -50,284 +57,178 @@ avoid false positives that degrade user experience), coverage across 100+ langua
 (to serve global user populations), and sub-10ms inference latency (to insert into
 API request paths without perceptible overhead).
 
-Existing safety approaches are inadequate in at least one dimension:
+Existing safety approaches trade off along several dimensions:
 \begin{itemize}
 \item Keyword filters: high false positive rate, trivially bypassed by paraphrasing
-\item Binary classifiers: insufficient granularity for nuanced policy enforcement
-\item Large safety-tuned generation models: accurate but too slow for real-time use
+\item Narrow binary classifiers: insufficient granularity for nuanced policy enforcement
+\item Large safety-tuned generation models: accurate but heavier to serve
 \item Embedding-similarity approaches: brittle to adversarial rephrasing
 \end{itemize}
 
-Zen3-Guard addresses all four constraints simultaneously through:
+Rather than train a safety classifier from scratch, Zen3-Guard adopts IBM's openly
+released Granite Guardian 8B~\cite{graniteguardian}, which directly targets these
+trade-offs as a purpose-built guardrail LLM. Our contribution is integration and
+packaging, not modeling. The upstream model provides:
 
 \begin{enumerate}
-\item \textbf{Safety-specialized Zen MoDE architecture} --- A dedicated subset of
-      experts trained exclusively on safety-relevant data, activated when routing
-      detects safety-sensitive content patterns.
-\item \textbf{Hierarchical harm taxonomy} --- A 47-category harm taxonomy covering
-      violence, hate speech, harassment, self-harm, illegal activity, privacy violations,
-      and sensitive content, with configurable policy enforcement per category.
-\item \textbf{Multilingual safety training} --- Dedicated safety annotation data in
-      100+ languages, with special attention to code-switching and cross-lingual
-      adversarial evasion.
-\item \textbf{Policy injection interface} --- Organization-specific content policies
-      are encoded as natural language policy documents and injected at inference time,
-      allowing policy customization without model retraining.
+\item \textbf{A risk-conditioned guardrail LLM} --- A dense Granite 3.x 8B Instruct model
+      fine-tuned by IBM to classify content against a named risk definition supplied at
+      inference time, emitting a \texttt{Yes}/\texttt{No} verdict plus a harm probability.
+\item \textbf{An IBM AI Risk Atlas taxonomy} --- Risk dimensions covering harmful content
+      and (in the RAG setting) faithfulness risks, rather than a single binary safe/unsafe
+      label.
+\item \textbf{Prompt- and response-side checking} --- The same model can be applied to the
+      user input, the model output, or a RAG response against its retrieved context.
+\item \textbf{Risk-definition prompting} --- Because the desired risk is described in the
+      prompt template at inference time, the deployed model can be steered toward different
+      checks without retraining.
 \end{enumerate}
+
+We do not modify the Granite Guardian weights; Zen3-Guard is the upstream model wired into
+the Zen serving stack. The remainder of this document describes that integration and
+summarizes IBM's published design and results with attribution.
 
 %% -----------------------------------------------------------------------
 \section{Architecture}
 \label{sec:arch}
 
-\subsection{Safety-Specialized Zen MoDE Configuration}
+\subsection{Upstream Model: Granite Guardian 8B}
 
-Zen3-Guard uses an 8B Zen MoDE backbone with 32 experts, where the expert population
-is partitioned into three functional groups:
+Zen3-Guard is the IBM Granite Guardian 8B model served unmodified. Per IBM's
+documentation~\cite{graniteguardian}, the model is a \emph{dense, decoder-only}
+transformer (\texttt{GraniteForCausalLM}; GQA, RoPE, SwiGLU MLP, RMSNorm). It is
+\emph{not} a mixture-of-experts model and has no notion of ``expert clusters'' or
+safety-specific routing. It is produced by supervised fine-tuning of the IBM Granite 3.x
+8B Instruct base model on risk-annotated data. We make no architectural changes; earlier
+revisions of this document incorrectly described a bespoke ``mixture-of-distilled-experts''
+backbone, which does not correspond to the deployed weights.
 
-\textbf{General language experts (experts 1--12)}: Standard language understanding,
-providing the contextual representations needed for nuanced safety judgment. These
-experts capture pragmatics, irony, and implicit meaning that keyword systems miss.
+\subsection{Risk Taxonomy and Output Schema}
 
-\textbf{Safety-specialized experts (experts 13--24)}: Trained predominantly on
-annotated safety datasets including ToxiGen, HatEval, OffComEval, and proprietary
-moderation datasets from production deployments. These experts develop representations
-tightly coupled to harm patterns.
+Granite Guardian does not emit a fixed multi-label vector. Instead, the caller supplies a
+\emph{risk definition} in the prompt template, and the model judges whether the supplied
+content exhibits that risk. The risk dimensions documented by IBM~\cite{graniteguardian},
+aligned with the IBM AI Risk Atlas, include:
 
-\textbf{Policy enforcement experts (experts 25--32)}: Process policy injection context
-and map general harm representations to organization-specific policy decisions.
-
-The router is trained with a safety-aware auxiliary loss that encourages activation
-of safety-specialized experts when input tokens match patterns associated with
-policy-sensitive categories:
-
-\begin{equation}
-\mathcal{L}_{\text{safety-route}} = -\sum_{c \in \mathcal{C}_{\text{harmful}}} \mathbb{1}[\text{expert} \in \mathcal{E}_{\text{safety}}] \cdot \log p(\text{expert} | x)
-\end{equation}
-
-\subsection{Harm Taxonomy and Output Schema}
-
-Zen3-Guard outputs a structured classification across 47 harm categories organized
-in a 5-level hierarchy:
-
-\begin{enumerate}
-\item Violence (physical threat, incitement, graphic content)
-\item Hate speech (identity-based, stereotyping, dehumanization)
-\item Harassment (personal attack, doxxing, coordinated abuse)
-\item Self-harm and mental health (suicide, eating disorders, self-injury)
-\item Illegal activity (CSAM, fraud, controlled substances, weapons)
-\item Privacy (PII exposure, surveillance, data theft)
-\item Misinformation (health, political, scientific)
-\item Sensitive content (adult content, religious sensitivity, political sensitivity)
-\end{enumerate}
-
-Each category produces:
 \begin{itemize}
-\item Binary decision: \texttt{safe} / \texttt{unsafe}
-\item Confidence score: $p \in [0, 1]$
-\item Severity level: \texttt{low} / \texttt{medium} / \texttt{high} / \texttt{critical}
-\item Evidence span: character offsets of the triggering text segment
+\item \textbf{Harmful content}: harm (general), social bias, profanity, sexual content,
+      unethical behavior, violence, and jailbreaking.
+\item \textbf{RAG faithfulness}: context relevance, groundedness, and answer relevance
+      (i.e., detecting ungrounded or off-topic answers).
 \end{itemize}
 
-\subsection{Multilingual Architecture}
+The IBM AI Risk Atlas mapping organizes harm into a deeper hierarchy (four high-level
+categories and thirteen sub-categories), but the model's runtime interface is per-risk
+rather than a flat 47-way classifier.
 
-Zen3-Guard uses a shared multilingual tokenizer with 150,528 vocabulary tokens covering
-100+ languages with balanced script coverage (Latin, Cyrillic, Arabic, CJK, Devanagari,
-and 40+ additional scripts). Language-specific routing biases are learned during
-training to account for language-specific harm expression patterns.
+For the selected risk, the model produces:
+\begin{itemize}
+\item Binary verdict: a \texttt{Yes} / \texttt{No} token (\texttt{Yes} = risk present).
+\item Probability of harm: derived from the log-probabilities of the \texttt{Yes}/\texttt{No}
+      tokens at the final position.
+\end{itemize}
 
-For low-resource languages with fewer than 1M safety-annotated tokens, a
-cross-lingual transfer mechanism leverages semantic similarity to high-resource
-language annotations:
+Severity tiers and character-offset evidence spans are not native outputs of the upstream
+model; where downstream Zen tooling needs them, they are derived heuristically outside the
+model and are not part of Granite Guardian's reported behavior.
 
-\begin{equation}
-p(y | x_{\text{low}}) = \sum_{\ell \in \mathcal{L}_{\text{high}}} w_\ell \cdot p(y | \phi(x_{\text{low}}, x_\ell))
-\end{equation}
+\subsection{Language Coverage}
 
-where $\phi$ is a cross-lingual alignment function and $w_\ell$ are similarity weights.
+Granite Guardian inherits the tokenizer and multilingual coverage of its Granite 3.x base.
+IBM's published evaluations focus primarily on English safety benchmarks; we therefore do
+not assert specific per-language safety scores. Claims in earlier revisions of a custom
+150{,}528-token multilingual tokenizer and a cross-lingual transfer objective were
+fabricated and have been removed.
 
-\subsection{Policy Injection Interface}
+\subsection{Risk-Definition Prompting}
 
-Organizations deploying Zen3-Guard can specify custom content policies as natural
-language documents. At inference time, the policy document is prepended to the
-classification context as a special \texttt{[POLICY]} token sequence:
+Because the risk to be checked is described in the chat template rather than baked into a
+classification head, a single deployed instance can perform different checks (e.g.
+\texttt{harm}, \texttt{social\_bias}, \texttt{groundedness}) by changing the
+\texttt{risk\_name} passed to the tokenizer's \texttt{apply\_chat\_template}. Schematically:
 
 \begin{verbatim}
-[POLICY] Our platform prohibits: discussion of competitor products,
-political content of any kind, and medical advice. Legal content
-standards: US jurisdiction, adult content permitted with age verification.
-[/POLICY]
-[INPUT] <user content to classify> [/INPUT]
+apply_chat_template(
+    messages=[{"role": "user", "content": <user content>},
+              {"role": "assistant", "content": <response>}],
+    guardian_config={"risk_name": "harm"})
+# -> model emits "Yes"/"No"; prob_of_risk read from token logits
 \end{verbatim}
 
-The policy injection is processed by the policy enforcement expert cluster, which
-overrides default safety decisions based on organization-specific rules. This enables
-a single deployed model instance to serve multiple tenants with different content policies.
+This is the upstream interface; Zen deployments expose it through a thin wrapper. It is a
+prompt-time mechanism, not a learned ``policy enforcement expert cluster.''
 
 %% -----------------------------------------------------------------------
 \section{Training}
 \label{sec:training}
 
-\subsection{Safety Annotation Data}
+\subsection{Provenance, Not Training}
 
-Zen3-Guard is trained on a 12B token safety-focused corpus:
+Zen3-Guard performs no training of its own. The guardrail was trained by IBM Research;
+we summarize their published methodology for completeness and attribute it
+accordingly~\cite{graniteguardian}.
 
-\begin{itemize}
-\item ToxiGen (machine-generated, diverse group coverage): 274K examples
-\item HatEval 2019 (multilingual hate speech, EN/ES): 19K examples
-\item OffComEval (offensive language): 14K examples
-\item Jigsaw Unintended Bias (conversation toxicity): 1.8M examples
-\item WildGuard (instruction following safety): 92K examples
-\item OpenAI Policy Violations (annotated API violations): 240K examples
-\item Proprietary production moderation logs (de-identified): 8M examples
-\item Adversarial probing dataset (red-team generated): 2.1M examples
-\item Multilingual safety corpus (100+ languages): 4.2M examples
-\item Safe content (negative examples for precision): 12M examples
-\end{itemize}
+Per IBM, Granite Guardian is created by \emph{supervised fine-tuning} of the Granite 3.x
+8B Instruct base model on a combination of human-annotated and synthetic risk data
+spanning the harm and RAG-faithfulness dimensions of the IBM AI Risk Atlas. The objective
+is standard next-token supervision over the \texttt{Yes}/\texttt{No} verdict given a
+risk-conditioned prompt; the harm probability used downstream is read from the
+\texttt{Yes}/\texttt{No} token log-probabilities at inference time.
 
-\subsection{Training Procedure}
-
-\textbf{Phase 1 --- Base language model initialization}: Initialize from the Zen3-Small
-(8B) base checkpoint, which provides strong multilingual language understanding.
-
-\textbf{Phase 2 --- Safety expert specialization}: Train only the safety-designated
-expert cluster on safety annotation data with a focal loss weighted toward false negatives:
-
-\begin{equation}
-\mathcal{L}_{\text{focal}} = -\alpha_t (1 - p_t)^\gamma \log(p_t), \quad \gamma = 2, \quad \alpha_{\text{positive}} = 4
-\end{equation}
-
-The positive class weight of 4 reflects the production priority of catching harmful
-content (false negatives) over minimizing false positives.
-
-\textbf{Phase 3 --- End-to-end fine-tuning}: Joint training of all components on the
-full safety corpus with the taxonomy hierarchy loss:
-
-\begin{equation}
-\mathcal{L}_{\text{taxonomy}} = \sum_{l=1}^{5} w_l \sum_{c \in \mathcal{C}_l} \mathcal{L}_{\text{BCE}}(p_c, y_c)
-\end{equation}
-
-where $w_l$ increases with hierarchy depth to enforce consistency between parent
-and child category predictions.
-
-\textbf{Phase 4 --- Adversarial robustness training}: Additional training on
-adversarially generated evasion attempts, including:
-\begin{itemize}
-\item Character substitution (l33t speak, Unicode confusables)
-\item Paraphrasing through synonym replacement
-\item Code-switching and macaronic text
-\item Prompt injection via role-playing framing
-\item Instruction hierarchy attacks (``ignore previous instructions'')
-\end{itemize}
+The fabricated training pipeline in earlier revisions of this document --- a 12B-token
+multilingual safety corpus, focal-loss ``safety expert'' specialization, a five-level
+taxonomy hierarchy loss, and a four-phase adversarial regimen --- did not describe any real
+training run and has been removed. For the authoritative dataset composition and training
+recipe, see IBM's paper~\cite{graniteguardian}.
 
 \subsection{Calibration}
 
-Zen3-Guard confidence scores are calibrated using temperature scaling on a held-out
-calibration set. Expected Calibration Error (ECE) after calibration: 0.018, indicating
-that a predicted confidence of 0.90 corresponds to approximately 90\% empirical accuracy.
+We do not recalibrate the model. IBM reports its evaluation metrics (Section~\ref{sec:eval})
+at a default decision threshold of $0.5$ on the harm probability; deployments may pick a
+different threshold per risk to trade recall against false positives.
 
 %% -----------------------------------------------------------------------
 \section{Evaluation}
 \label{sec:eval}
 
-\subsection{Primary Safety Benchmarks}
+All numbers in this section are IBM's published results for Granite Guardian
+3.0~8B~\cite{graniteguardian}, reproduced here with attribution. We ran no evaluations of
+our own and make no independent benchmark claims.
+
+\subsection{Aggregate Results Reported by IBM}
+
+IBM reports two headline metrics for Granite Guardian 3.0~8B, aggregated over public
+benchmark suites:
 
 \begin{table}[H]
 \centering
-\caption{Primary safety classification benchmarks}
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Model} & \textbf{ToxiGen} & \textbf{HatEval} & \textbf{OffComEval} & \textbf{WildGuard} \\
-\midrule
-Zen-Guard     & 97.1 & 94.3 & 92.1 & 88.4 \\
-Zen2-Guard    & 98.4 & 96.2 & 94.8 & 91.7 \\
-\textbf{Zen3-Guard} & \textbf{99.2} & \textbf{97.8} & \textbf{96.4} & \textbf{94.3} \\
-\bottomrule
-\end{tabular}
-\label{tab:safety}
-\end{table}
-
-\subsection{Multilingual Performance}
-
-\begin{table}[H]
-\centering
-\caption{Multilingual safety classification (macro-F1 by language family)}
+\caption{Granite Guardian 3.0 8B aggregate metrics, as reported by IBM~\cite{graniteguardian}.}
 \begin{tabular}{lcc}
 \toprule
-\textbf{Language Family} & \textbf{Zen3-Guard F1} & \textbf{Zen2-Guard F1} \\
+\textbf{Capability} & \textbf{Metric} & \textbf{Value} \\
 \midrule
-Germanic (EN, DE, NL, SV)   & 0.981 & 0.972 \\
-Romance (ES, FR, IT, PT)    & 0.974 & 0.963 \\
-Slavic (RU, PL, CS, UK)     & 0.968 & 0.951 \\
-Semitic (AR, HE, AM)        & 0.961 & 0.938 \\
-CJK (ZH, JA, KO)            & 0.972 & 0.956 \\
-Indic (HI, BN, TA, TE)      & 0.954 & 0.927 \\
-Low-resource (50+ others)   & 0.943 & 0.901 \\
-\textbf{Overall average}    & \textbf{0.968} & \textbf{0.944} \\
+Harmful-content detection      & Aggregate AUC & 0.871 \\
+Harmful-content detection      & Aggregate F1 (threshold 0.5) & 0.758 \\
+RAG hallucination / groundedness & Average AUC (TRUE suite) & 0.854 \\
 \bottomrule
 \end{tabular}
-\label{tab:multilingual}
+\label{tab:granite-agg}
 \end{table}
 
-\subsection{Inference Latency}
+The harmful-content figures are aggregated across public safety datasets used in IBM's
+evaluation (for example ToxicChat, HarmBench, SafeRLHF, BeaverTails, OpenAI Moderation,
+SimpleSafetyTests, and xstest), with comparisons against Llama~Guard and ShieldGemma
+baselines; the RAG-hallucination figure is the average AUC on the TRUE
+benchmark~\cite{graniteguardian}. We refer the reader to IBM's paper for per-dataset
+breakdowns, which we do not reproduce here.
 
-\begin{table}[H]
-\centering
-\caption{Inference latency by hardware (batch size 32, sequence length 512)}
-\begin{tabular}{lccc}
-\toprule
-\textbf{Hardware} & \textbf{P50 Latency (ms)} & \textbf{P99 Latency (ms)} & \textbf{Throughput (req/s)} \\
-\midrule
-NVIDIA A10G (24GB)   & 3.8  & 5.1  & 8400  \\
-NVIDIA A100 (80GB)   & 2.1  & 3.2  & 15200 \\
-NVIDIA L4 (24GB)     & 4.2  & 5.8  & 7600  \\
-CPU (x86-64, INT8)   & 24.0 & 31.0 & 1300  \\
-\bottomrule
-\end{tabular}
-\label{tab:latency}
-\end{table}
+\subsection{A Note on the Numbers in Earlier Revisions}
 
-\subsection{Adversarial Robustness}
-
-\begin{table}[H]
-\centering
-\caption{Robustness to adversarial evasion (detection rate \%)}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Attack Type} & \textbf{Zen3-Guard} & \textbf{Zen2-Guard} \\
-\midrule
-Character substitution (l33t speak)   & 98.7 & 96.2 \\
-Unicode confusable substitution       & 97.9 & 93.4 \\
-Synonym paraphrase                    & 96.8 & 91.7 \\
-Code-switching                        & 95.4 & 88.3 \\
-Role-play framing                     & 94.1 & 85.9 \\
-Instruction injection                 & 93.2 & 83.1 \\
-Composite (all attacks combined)      & 91.8 & 79.4 \\
-\bottomrule
-\end{tabular}
-\label{tab:adversarial}
-\end{table}
-
-\subsection{False Positive Rate}
-
-\begin{table}[H]
-\centering
-\caption{False positive rate on benign content categories}
-\begin{tabular}{lc}
-\toprule
-\textbf{Benign Category} & \textbf{FPR (\%)} \\
-\midrule
-General news articles     & 0.31 \\
-Scientific papers         & 0.18 \\
-Creative fiction          & 1.24 \\
-Medical/clinical text     & 0.89 \\
-Legal documents           & 0.42 \\
-Historical records        & 0.67 \\
-Code and documentation    & 0.09 \\
-\textbf{Overall FPR}      & \textbf{0.54} \\
-\bottomrule
-\end{tabular}
-\label{tab:fpr}
-\end{table}
+Earlier revisions of this document reported figures such as ToxiGen 99.2\%, HatEval 97.8\%,
+a multilingual macro-F1 of 0.968, sub-5ms A10G latency, and per-attack adversarial
+robustness rates. None of these came from a measured evaluation of the deployed model; they
+were fabricated and have been removed. Serving latency depends entirely on the operator's
+hardware and stack and is not a property we can claim for the upstream weights.
 
 %% -----------------------------------------------------------------------
 \section{Related Work}
@@ -340,19 +241,21 @@ expression patterns. Machine learning approaches improved recall but suffered fr
 adversarial brittleness. Transformer-based classifiers~\cite{perspectiveapi} brought
 contextual understanding but required separate models per language.
 
-\subsection{Safety-Tuned Language Models}
+\subsection{Guardrail Models}
 
-Constitutional AI~\cite{bai2022constitutional} and related work demonstrated that
-safety behaviors can be instilled in generative models through targeted fine-tuning.
-Zen3-Guard extends this line by building a dedicated safety-only classifier rather
-than a safety-tuned generative model, achieving higher throughput through task specialization.
+Constitutional AI~\cite{bai2022constitutional} demonstrated that safety behaviors can be
+instilled in models through targeted fine-tuning. A subsequent line of work --- including
+Llama~Guard, ShieldGemma, and IBM's Granite Guardian~\cite{graniteguardian} --- packages a
+fine-tuned LLM specifically as an input/output guardrail that emits a risk verdict.
+Zen3-Guard does not introduce a new model in this line; it adopts Granite Guardian directly.
 
 \subsection{Multilingual Safety}
 
-Cross-lingual safety classification has been addressed through multilingual pre-training
-and cross-lingual transfer~\cite{multilingual-safety}. Zen3-Guard builds on this
-foundation with explicit multilingual safety annotation data and a cross-lingual
-alignment mechanism for low-resource languages.
+Cross-lingual safety classification has been studied through multilingual pre-training and
+transfer~\cite{multilingual-safety}. We make no multilingual-safety claims for Zen3-Guard
+beyond what IBM reports for Granite Guardian, whose published evaluations are primarily
+English; the cross-lingual ``alignment mechanism'' described in earlier revisions did not
+exist and has been removed.
 
 %% -----------------------------------------------------------------------
 \section{Deployment Recommendations}
@@ -363,45 +266,49 @@ alignment mechanism for low-resource languages.
 Zen3-Guard is designed for three primary deployment patterns:
 
 \textbf{Synchronous API guard}: Insert as a pre-processing layer before the main
-LLM. Reject or flag requests before generation. Adds 4--5ms overhead on A10G.
+LLM, classifying the user prompt and rejecting or flagging it before generation.
 
-\textbf{Parallel screening}: Run Zen3-Guard concurrently with the main LLM on
-the input, and suppress responses if Guard returns unsafe. Adds 0ms to perceived
-latency on GPU clusters with available capacity.
+\textbf{Parallel screening}: Run the guard concurrently with the main LLM on
+the input, and suppress responses if it returns a positive risk verdict. On GPU clusters
+with spare capacity this can overlap with generation.
 
-\textbf{Output scanning}: Run Zen3-Guard on model outputs before returning to user.
-Recommended for generation tasks where harmful content may emerge from safe inputs.
+\textbf{Output scanning}: Run the guard on model outputs (and, in RAG, against the
+retrieved context for groundedness) before returning to the user. Recommended where
+harmful or ungrounded content may emerge from a benign-looking input.
+
+Because the guard is itself an 8B decoder LLM, its serving cost is comparable to running an
+8B model; we make no specific latency guarantee, as it depends on the operator's hardware,
+batching, and quantization.
 
 \subsection{Threshold Configuration}
 
-Default thresholds are calibrated for a 0.54\% overall false positive rate.
-Organizations can adjust per-category thresholds based on their risk tolerance:
-
-\begin{itemize}
-\item Strict mode ($p > 0.5$): 99.2\% recall, 1.8\% FPR
-\item Balanced mode ($p > 0.7$): 97.8\% recall, 0.54\% FPR (default)
-\item Precision mode ($p > 0.9$): 94.1\% recall, 0.12\% FPR
-\end{itemize}
+The harm probability is read from the \texttt{Yes}/\texttt{No} token log-probabilities.
+IBM reports its metrics at a default threshold of $p = 0.5$~\cite{graniteguardian}.
+Operators may raise the threshold per risk to favor precision (fewer false positives) or
+lower it to favor recall (catching more borderline content); the appropriate operating
+point is deployment-specific and should be chosen against the operator's own labeled data
+rather than the illustrative recall/FPR figures asserted in earlier revisions, which were
+not measured.
 
 %% -----------------------------------------------------------------------
 \section{Conclusion}
 \label{sec:conclusion}
 
-Zen3-Guard provides production-grade multilingual content safety classification at
-8B parameters, achieving ToxiGen 99.2\%, HatEval 97.8\%, multilingual macro-F1 0.968,
-and sub-5ms inference latency --- meeting all four production constraints simultaneously.
-The safety-specialized Zen MoDE expert configuration, 47-category harm taxonomy,
-adversarial robustness training, and policy injection interface make Zen3-Guard a
-flexible foundation for diverse content moderation use cases.
+Zen3-Guard is the content-safety layer of the Zen model family, implemented as a direct
+deployment of IBM's Apache-2.0 Granite Guardian 8B guardrail~\cite{graniteguardian}. It is
+a dense, decoder-only Granite 3.x 8B Instruct model fine-tuned by IBM Research to classify
+prompts and responses against a named risk and emit a \texttt{Yes}/\texttt{No} verdict with
+a harm probability. IBM reports an aggregate AUC of 0.871 on harmful-content benchmarks and
+0.854 on RAG-hallucination benchmarks for the 3.0 8B model. We contribute integration and
+packaging into the Zen serving stack, not a new model, and we make no benchmark claims of
+our own. Operators evaluating Zen3-Guard for production should validate it on their own
+content distribution and choose per-risk thresholds accordingly.
 
-Future work will extend coverage to multimodal inputs (image and audio content safety),
-expand the harm taxonomy to emerging threat categories, and develop real-time online
-learning mechanisms for rapid adaptation to novel evasion patterns.
+\section*{Acknowledgments and Attribution}
 
-\section*{Acknowledgments}
-
-The authors thank Zoo Labs Foundation's safety research team for annotation protocols
-and the Zen LM red team for adversarial evaluation support.
+Zen3-Guard is built entirely on IBM Granite Guardian (\texttt{ibm-granite/granite-guardian},
+Apache-2.0), developed by IBM Research; all model weights, training data, and reported
+metrics are IBM's. We thank the IBM Granite team for releasing the model openly.
 
 \bibliographystyle{plain}
 \begin{thebibliography}{9}
@@ -417,14 +324,15 @@ Y. Bai et al.,
 \textit{arXiv:2212.08073}, 2022.
 
 \bibitem{multilingual-safety}
-F. Hartvigsen et al.,
+T. Hartvigsen et al.,
 ``ToxiGen: A Large-Scale Machine-Generated Dataset for Adversarial and Implicit Hate Speech Detection,''
 \textit{ACL}, 2022.
 
-\bibitem{zip001}
-Zoo Labs Foundation,
-``ZIP-001: Decentralized Semantic Optimization (DSO),''
-\textit{Zoo Improvement Proposals}, 2024.
+\bibitem{graniteguardian}
+I. Padhi et al. (IBM Research),
+``Granite Guardian,''
+\textit{arXiv:2412.07724}, 2024.
+Model: \href{https://huggingface.co/ibm-granite/granite-guardian-3.0-8b}{ibm-granite/granite-guardian-3.0-8b} (Apache-2.0).
 
 \end{thebibliography}
 
