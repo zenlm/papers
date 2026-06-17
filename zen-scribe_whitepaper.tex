@@ -42,7 +42,8 @@
     \vspace{0.5cm}
     \Huge \textbf{Zen-Scribe} \\
     \vspace{0.3cm}
-    \large Speech Recognition \& Transcription \\
+    \large A Packaged Multilingual Speech-Recognition Distribution \\
+    built on Qwen3-ASR \\
     \vspace{0.5cm}
     \normalsize Technical Whitepaper v1.0
 }
@@ -62,9 +63,16 @@
 \maketitle
 
 \begin{abstract}
-We present \textbf{Zen-Scribe}, a 1.5B parameter model optimized for speech recognition \& transcription. 
-Built upon a frontier speech recognition architecture, this model achieves state-of-the-art performance while maintaining exceptional efficiency 
-with only 1.5B active parameters. the model represents a significant advancement in democratizing AI through sustainable and efficient architectures.
+\textbf{Zen-Scribe} is a packaged, deployment-ready distribution of Alibaba's
+open-source \textbf{Qwen3-ASR} speech-recognition model~\cite{qwen3asr}. It is
+\emph{not} a model trained from scratch: the recognition capability, multilingual
+coverage, and accuracy are entirely those of the upstream Qwen3-ASR weights, which
+are released under the Apache~2.0 license. Zen-Scribe contributes packaging, not new
+training---quantized build artifacts (GGUF, MLX), a thin transcription API, and
+documentation---so that the upstream model is easy to self-host on commodity and
+Apple-Silicon hardware. This whitepaper documents what Zen-Scribe wraps, the
+provenance of the underlying model, and how to deploy it. All capability claims are
+attributed to the upstream Qwen3-ASR technical report rather than re-measured here.
 \end{abstract}
 
 \tableofcontents
@@ -72,24 +80,41 @@ with only 1.5B active parameters. the model represents a significant advancement
 
 \section{Introduction}
 
-The rapid advancement of artificial intelligence has created an unprecedented demand for models that balance capability with efficiency. 
-\textbf{Zen-Scribe} addresses this challenge by delivering enterprise-grade performance while maintaining a minimal computational footprint.
+Self-hosting a strong multilingual speech-recognition model is often blocked not by
+model quality but by packaging: converting weights to quantized runtime formats,
+wiring a transcription interface, and documenting hardware requirements.
+\textbf{Zen-Scribe} addresses this gap by repackaging an existing, openly-licensed
+ASR model---Alibaba's \textbf{Qwen3-ASR}~\cite{qwen3asr}---for convenient local
+deployment. We make no claim to have trained a recognition model; our contribution is
+distribution and tooling around upstream weights.
 
-\subsection{Key Innovations}
+\subsection{What Zen-Scribe Provides}
 \begin{itemize}
-    \item \textbf{Efficient Architecture}: 1.5B active parameters from 1.5B total
-    \item \textbf{Specialized Training}: Optimized for speech recognition \& transcription
-    \item \textbf{Extended Context}: 30s audio context window
-    
-    
-    \item \textbf{Multilingual}: 98 languages support
+    \item \textbf{Packaging}: GGUF and MLX build artifacts of the upstream Qwen3-ASR
+          weights for CPU, GPU, and Apple-Silicon inference.
+    \item \textbf{A thin API}: A \texttt{transcribe()} convenience wrapper over the
+          upstream model.
+    \item \textbf{Documentation}: Hardware sizing and deployment notes (below).
 \end{itemize}
 
-\section{Architecture}
+\subsection{What Zen-Scribe Does Not Provide}
+\begin{itemize}
+    \item No new pretraining, fine-tuning, or distillation of the acoustic model.
+    \item No independently-measured accuracy numbers (see \S\ref{sec:upstream}).
+    \item No proprietary architecture; the architecture is Qwen3-ASR's.
+\end{itemize}
 
-\subsection{Model Design}
+\section{Underlying Model}
+\label{sec:upstream}
 
-Zen-Scribe is based on a 1.5B-parameter encoder-decoder ASR architecture with several key modifications:
+\subsection{Provenance}
+
+Zen-Scribe wraps \textbf{Qwen3-ASR}, the open-source automatic-speech-recognition
+series released by the Qwen team at Alibaba Cloud
+(\texttt{Qwen3ASRForConditionalGeneration})~\cite{qwen3asr}. The upstream family is
+released under the \textbf{Apache~2.0} license, which permits redistribution and
+commercial use; Zen-Scribe inherits that license and redistributes the weights
+unmodified.
 
 \begin{table}[H]
 \centering
@@ -97,84 +122,49 @@ Zen-Scribe is based on a 1.5B-parameter encoder-decoder ASR architecture with se
 \toprule
 \textbf{Component} & \textbf{Specification} \\
 \midrule
-Total Parameters & 1.5B \\
-Active Parameters & 1.5B \\
-Base Model & Zen-ASR-1.5B \\
-Context Length & 30s audio \\
-
-
-Languages & 98 languages \\
-Architecture Type & Encoder-Decoder \\
+Upstream model & Qwen3-ASR (Alibaba Cloud / Qwen team) \\
+Architecture & As published upstream (encoder + LLM decoder) \\
+HF class & \texttt{Qwen3ASRForConditionalGeneration} \\
+License & Apache 2.0 (inherited from upstream) \\
+Capabilities & Multilingual ASR, language ID, timestamps \\
 \bottomrule
 \end{tabular}
-\caption{Zen-Scribe Architecture Specifications}
+\caption{Underlying model provenance. All specifications are inherited from Qwen3-ASR.}
 \end{table}
 
-\subsection{Technical Innovations}
+\subsection{Capabilities (as reported upstream)}
 
-\subsubsection{Mixture of Experts (MoE)}
-The model uses a dense architecture with all parameters active during inference, optimized for maximum performance per parameter.
+The following capabilities are those documented by the upstream Qwen3-ASR technical
+report~\cite{qwen3asr}; we cite rather than re-measure them. Per Alibaba's release,
+the Qwen3-ASR series supports stable multilingual speech, music, and song recognition
+across a large set of languages and dialects, with automatic language detection,
+streaming and offline operation from a unified model, and timestamp prediction. For
+exact word-error-rate figures, benchmark methodology, and per-language breakdowns,
+readers should consult the upstream report directly; we deliberately do not reproduce
+benchmark tables we did not run.
 
-\subsubsection{Attention Mechanism}
-Specialized attention mechanisms optimized for speech recognition \& transcription.
+\subsection{``Flash'' variant}
 
+Alibaba additionally offers a hosted \textbf{Qwen3-ASR-Flash} real-time WebSocket
+endpoint via the DashScope platform. That hosted service is distinct from the
+self-hostable open weights that Zen-Scribe packages; Zen-Scribe is a local
+distribution and does not proxy the hosted API.
 
+\section{Packaging and Tooling}
 
-\section{Performance Benchmarks}
-
-\subsection{Evaluation Results}
-
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lc}
-\toprule
-\textbf{Benchmark} & \textbf{Score} \\
-\midrule
-Word Error Rate (WER) & 3.2\% \\
-LibriSpeech test-clean & 2.8\% \\
-Common Voice & 4.1\% \\
-Multilingual ASR & 5.2\% \\
-\bottomrule
-\end{tabular}
-\caption{Speech Recognition Benchmarks}
-\end{table}
-
-\subsection{Efficiency Metrics}
-
-\begin{table}[H]
-\centering
-\begin{tabular}{ll}
-\toprule
-\textbf{Metric} & \textbf{Value} \\
-\midrule
-Inference Speed & 380 tokens/sec \\
-Memory Usage (INT4) & 3 GB \\
-Energy Efficiency & 96\% reduction \\
-Latency (First Token) & 20 ms \\
-\bottomrule
-\end{tabular}
-\caption{Efficiency Metrics}
-\end{table}
-
-\section{Training Methodology}
-
-\subsection{Dataset}
-The model was trained on a carefully curated dataset comprising:
-\begin{itemize}
-    \item High-quality filtered web data (1TB)
-    \item Domain-specific corpora for speech recognition \& transcription
-    \item Synthetic data generation for edge cases
-    \item Human feedback through RLHF
-\end{itemize}
-
-\subsection{Training Process}
+Zen-Scribe's engineering work is confined to packaging:
 \begin{enumerate}
-    \item \textbf{Pretraining}: 2 trillion tokens over 14 days on 8x A100
-    \item \textbf{Supervised Fine-tuning}: Task-specific optimization
-    \item \textbf{RLHF}: Alignment with human preferences
-    \item \textbf{Constitutional AI}: Safety and helpfulness optimization
+    \item \textbf{Format conversion}: Producing GGUF (\texttt{Q4\_K\_M},
+          \texttt{Q5\_K\_M}, \texttt{Q8\_0}) and MLX (4-bit, 8-bit) artifacts from
+          the upstream Apache-2.0 weights.
+    \item \textbf{Interface}: A thin \texttt{transcribe()} wrapper.
+    \item \textbf{Verification}: Smoke tests confirming the packaged artifacts produce
+          output equivalent to the upstream reference implementation on sample audio.
 \end{enumerate}
+
+We do not report custom accuracy or throughput benchmarks here, because the model's
+behavior is that of upstream Qwen3-ASR; any independently-run numbers would need their
+own documented methodology before they could be cited.
 
 \section{Use Cases and Applications}
 
@@ -189,108 +179,94 @@ The model was trained on a carefully curated dataset comprising:
 
 \subsection{Integration Examples}
 
-\begin{lstlisting}[language=Python, caption=Basic Usage Example]
-from transformers import AutoModelForSpeechRecognition, AutoTokenizer
+\begin{lstlisting}[language=Python, caption=Basic Usage Example (loads the upstream Qwen3-ASR weights repackaged by Zen-Scribe)]
+import librosa
+from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 
-# Load model and tokenizer
-model = AutoModelForSpeechRecognition.from_pretrained("zenlm/zen-scribe-1.5b-asr")
-tokenizer = AutoTokenizer.from_pretrained("zenlm/zen-scribe-1.5b-asr")
+# Load the packaged upstream Qwen3-ASR model
+model = AutoModelForSpeechSeq2Seq.from_pretrained("zenlm/zen-scribe")
+processor = AutoProcessor.from_pretrained("zenlm/zen-scribe")
 
-# Generate response
+# Transcribe
 audio, sr = librosa.load("speech.wav", sr=16000)
-transcription = model.transcribe(audio)
-print(transcription["text"])
+inputs = processor(audio, sampling_rate=sr, return_tensors="pt")
+transcription = processor.batch_decode(
+    model.generate(**inputs), skip_special_tokens=True
+)
+print(transcription[0])
 \end{lstlisting}
 
-\section{Environmental Impact}
+\section{Safety, Privacy, and Responsible Use}
 
-\subsection{Sustainability Metrics}
+Because Zen-Scribe redistributes upstream weights unmodified, its model-level safety
+properties are those of Qwen3-ASR; we add no new alignment training. At the
+deployment layer we recommend:
 \begin{itemize}
-    \item \textbf{Carbon Footprint}: 0.03 kg CO\textsubscript{2}e per million inferences
-    \item \textbf{Energy Usage}: 0.8 kWh per day (1000 users)
-    \item \textbf{Efficiency Gain}: 96\% reduction vs comparable models
-\end{itemize}
-
-\subsection{Green AI Commitment}
-Zen AI models are designed with sustainability as a core principle, achieving industry-leading efficiency 
-through architectural innovations and optimization techniques.
-
-\section{Safety and Alignment}
-
-\subsection{Safety Measures}
-\begin{itemize}
-    \item Constitutional AI training for harmlessness
-    \item Comprehensive red-teaming and adversarial testing
-    \item Built-in safety filters and guardrails
-    \item Regular safety audits and updates
-\end{itemize}
-
-\subsection{Ethical Considerations}
-The model has been developed with careful attention to:
-\begin{itemize}
-    \item Bias mitigation through diverse training data
-    \item Transparency in capabilities and limitations
-    \item Privacy-preserving deployment options
-    \item Responsible AI principles alignment
+    \item \textbf{Privacy}: Transcription can run fully on-device; audio need not leave
+          the host. Operators should obtain consent before transcribing third-party
+          speech and avoid retaining raw audio beyond what is required.
+    \item \textbf{Limitations}: ASR accuracy varies by language, accent, audio quality,
+          and domain. Per-language behavior is inherited from upstream; consult the
+          Qwen3-ASR report~\cite{qwen3asr} for known limitations.
+    \item \textbf{Bias}: Recognition error rates can differ across accents and
+          dialects; downstream applications should account for this.
 \end{itemize}
 
 \section{Deployment Options}
 
 \subsection{Available Formats}
 \begin{itemize}
-    \item \textbf{SafeTensors}: Original precision weights
-    \item \textbf{GGUF}: Quantized formats (Q4\_K\_M, Q5\_K\_M, Q8\_0)
-    \item \textbf{MLX}: Apple Silicon optimization (4-bit, 8-bit)
-    \item \textbf{ONNX}: Cross-platform deployment (coming soon)
+    \item \textbf{SafeTensors}: Upstream-precision weights (as released by Alibaba).
+    \item \textbf{GGUF}: Quantized formats (Q4\_K\_M, Q5\_K\_M, Q8\_0).
+    \item \textbf{MLX}: Apple Silicon optimization (4-bit, 8-bit).
 \end{itemize}
 
 \subsection{Hardware Requirements}
+
+Memory footprint depends on the upstream parameter count and the chosen quantization.
+As a rule of thumb, lower-precision quantization reduces memory monotonically (Q4
+$<$ Q8 $<$ FP16); the values below are approximate sizing guidance for a model in the
+small-LLM range and should be validated against the specific upstream checkpoint and
+runtime.
+
 \begin{table}[H]
 \centering
 \begin{tabular}{lll}
 \toprule
-\textbf{Precision} & \textbf{Memory} & \textbf{Recommended Hardware} \\
+\textbf{Precision} & \textbf{Approx. Memory} & \textbf{Example Hardware} \\
 \midrule
-FP16 & 3 GB & RTX 3060 \\
-INT8 & 1.5 GB & RTX 2060 \\
-INT4 & 3 GB & Intel NUC \\
+FP16 & higher & Discrete GPU (e.g.\ RTX 3060+) \\
+INT8 & medium & Entry GPU / high-RAM CPU \\
+INT4 & lowest & CPU / small-footprint devices \\
 \bottomrule
 \end{tabular}
-\caption{Hardware Requirements by Precision}
+\caption{Approximate hardware sizing by precision. Exact memory follows from the
+upstream checkpoint size; measure before provisioning.}
 \end{table}
 
 \section{Future Work}
 
-\subsection{Planned Improvements}
 \begin{itemize}
-    \item Extended context windows (up to 1M tokens)
-    \item Enhanced multimodal capabilities
-    \item Improved efficiency through further optimization
-    \item Expanded language support
-\end{itemize}
-
-\subsection{Research Directions}
-\begin{itemize}
-    \item Advanced reasoning mechanisms
-    \item Self-supervised learning improvements
-    \item Zero-shot generalization enhancement
-    \item Continual learning capabilities
+    \item Tracking upstream Qwen3-ASR releases and re-packaging new checkpoints.
+    \item Additional runtime targets (e.g.\ ONNX) for the same upstream weights.
+    \item Optional, clearly-labelled fine-tunes for specific domains, kept separate
+          from the base redistribution.
 \end{itemize}
 
 \section{Conclusion}
 
-\textbf{Zen-Scribe} represents a significant advancement in AI democratization, 
-delivering exceptional performance for speech recognition \& transcription while maintaining 
-unprecedented efficiency. Through innovative architecture design and careful optimization, 
-the model achieves a balance between capability and sustainability that sets a new standard 
-for responsible AI development.
+\textbf{Zen-Scribe} is a packaging and deployment layer over Alibaba's openly-licensed
+\textbf{Qwen3-ASR} model. Its value is convenience---quantized artifacts, a thin API,
+and documentation---not novel modeling. The recognition quality is entirely upstream's;
+we attribute it accordingly and avoid presenting benchmarks we did not run.
 
 \section*{Acknowledgments}
 
-We thank the open-source community, our research partners, and the teams at Hanzo AI and 
-Zoo Labs Foundation for their contributions to this work.
+We thank the Qwen team at Alibaba Cloud for releasing Qwen3-ASR under Apache~2.0, and
+the broader open-source community whose tooling makes local repackaging possible.
 
 \begin{thebibliography}{99}
+\bibitem{qwen3asr} Qwen Team, Alibaba Cloud. (2026). Qwen3-ASR Technical Report. arXiv:2601.21337. Models and code: \url{https://github.com/QwenLM/Qwen3-ASR} (Apache 2.0).
 \bibitem{vaswani2017attention} Vaswani, A. et al. (2017). Attention Is All You Need. NeurIPS 2017.
 \bibitem{brown2020language} Brown, T. et al. (2020). Language Models are Few-Shot Learners. NeurIPS 2020.
 \bibitem{radford2019language} Radford, A. et al. (2019). Language Models are Unsupervised Multitask Learners. OpenAI Technical Report.
@@ -314,16 +290,18 @@ Zoo Labs Foundation for their contributions to this work.
 \toprule
 \textbf{Field} & \textbf{Value} \\
 \midrule
-Model Name & Zen-Scribe \\
+Distribution Name & Zen-Scribe \\
+Upstream Model & Qwen3-ASR (Alibaba Cloud / Qwen team) \\
+Relationship & Repackaging of upstream weights (no retraining) \\
 Version & 1.0.0 \\
-Release Date & September 2025 \\
-License & Apache 2.0 \\
-Repository & \href{https://huggingface.co/zenlm/zen-scribe-1.5b-asr}{huggingface.co/zenlm/zen-scribe-1.5b-asr} \\
-Documentation & \href{https://github.com/zenlm/zen}{github.com/zenlm/zen} \\
+License & Apache 2.0 (inherited from upstream) \\
+Repository & \href{https://huggingface.co/zenlm/zen-scribe}{huggingface.co/zenlm/zen-scribe} \\
+Upstream & \href{https://github.com/QwenLM/Qwen3-ASR}{github.com/QwenLM/Qwen3-ASR} \\
 Contact & research@hanzo.ai \\
 \bottomrule
 \end{tabular}
-\caption{Model Card Information}
+\caption{Distribution card. Zen-Scribe is a packaged distribution of Qwen3-ASR, not an
+independently trained model.}
 \end{table}
 
 \end{document}

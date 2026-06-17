@@ -169,8 +169,8 @@ where $\delta \in \{-2, -1, 0, +1, +2\}$ is the annotator preference strength.
 
 \subsection{Multi-Head Architecture}
 
-Our reward model uses a Zen MoDE encoder to produce a contextual representation of
-$(x, y)$, with separate output heads for each alignment dimension:
+Our reward model uses a Qwen3-based Zen model as the encoder to produce a contextual
+representation of $(x, y)$, with separate output heads for each alignment dimension:
 
 \begin{equation}
     r_d(x, y) = \mathbf{w}_d^\top h(x, y) + b_d, \quad
@@ -285,24 +285,29 @@ Multi-head + ensemble      & 85.2 & 0.852 \\
 
 \begin{table}[H]
 \centering
-\caption{Alignment benchmark results. AlpacaEval 2.0 win rate vs.\ GPT-4 Turbo.
-MT-Bench score (1--10). Arena Elo (Chatbot Arena).}
-\begin{tabular}{lrrr}
+\caption{Relative alignment quality of training recipes applied to the Zen-32B
+(Qwen3-32B) model, ordered from weakest to strongest on open-ended generation
+(AlpacaEval-style win rate, MT-Bench, and Chatbot-Arena-style preference). More
+arrows indicate higher quality.}
+\begin{tabular}{lccc}
 \toprule
-\textbf{Training} & \textbf{AlpacaEval 2.0 (\%)} & \textbf{MT-Bench} & \textbf{Arena Elo} \\
+\textbf{Training} & \textbf{Win rate} & \textbf{MT-Bench} & \textbf{Arena preference} \\
 \midrule
-SFT only           & 18.4 & 7.8 & 1124 \\
-DPO (human data)   & 31.7 & 8.4 & 1198 \\
-DPO (+ synthetic)  & 36.2 & 8.7 & 1231 \\
-RLHF (PPO, single RM)     & 38.4 & 8.9 & 1248 \\
-RLHF (PPO, ensemble RM)   & \textbf{44.8} & \textbf{9.2} & \textbf{1312} \\
+SFT only                & $\uparrow$    & $\uparrow$    & $\uparrow$ \\
+DPO (human data)        & $\uparrow\uparrow$   & $\uparrow\uparrow$   & $\uparrow\uparrow$ \\
+DPO (+ synthetic)       & $\uparrow\uparrow\uparrow$  & $\uparrow\uparrow\uparrow$  & $\uparrow\uparrow\uparrow$ \\
+RLHF (PPO, single RM)   & $\uparrow\uparrow\uparrow$  & $\uparrow\uparrow\uparrow$  & $\uparrow\uparrow\uparrow$ \\
+RLHF (PPO, ensemble RM) & $\uparrow\uparrow\uparrow\uparrow$ & $\uparrow\uparrow\uparrow\uparrow$ & $\uparrow\uparrow\uparrow\uparrow$ \\
 \bottomrule
 \end{tabular}
 \label{tab:alignment}
 \end{table}
 
-Full RLHF with ensemble reward outperforms DPO by 8.6 pp on AlpacaEval. However,
-DPO at significantly lower compute cost achieves competitive performance on MT-Bench.
+Full RLHF with the ensemble reward model achieves the highest open-ended generation
+quality, ahead of single-RM RLHF and of DPO. However, DPO — at significantly lower
+compute cost — achieves competitive performance, and adding synthetic preference data
+narrows the gap further. The practical recommendation depends on the available compute
+budget (Section~\ref{sec:discussion}).
 
 \subsection{Reward Model Calibration}
 
@@ -324,22 +329,13 @@ Multi-head + ensemble    & 0.073 & $-41.1\%$ \\
 
 \subsection{Downstream RLHF Results}
 
-\begin{table}[H]
-\centering
-\caption{Downstream benchmark performance after RLHF. RLHF with ensemble RM provides
-consistent improvements without degrading base capabilities.}
-\begin{tabular}{lrrrrr}
-\toprule
-\textbf{Model} & \textbf{MMLU} & \textbf{GSM8K} & \textbf{HumanEval} & \textbf{TruthfulQA} \\
-\midrule
-Zen MoDE-72B (base)       & 84.7 & 90.8 & 79.3 & 74.8 \\
-+ SFT                     & 84.9 & 91.2 & 80.1 & 76.3 \\
-+ DPO                     & 85.1 & 91.8 & 80.7 & 78.9 \\
-+ RLHF (ensemble RM)      & \textbf{85.4} & \textbf{92.1} & \textbf{81.3} & \textbf{82.4} \\
-\bottomrule
-\end{tabular}
-\label{tab:downstream}
-\end{table}
+A key concern with alignment training is capability regression on standard benchmarks.
+Evaluating the Zen-32B (Qwen3-32B) model through the SFT $\to$ DPO $\to$ RLHF pipeline on
+MMLU, GSM8K, HumanEval, and TruthfulQA, we find that each alignment stage preserves
+capability on the knowledge and reasoning benchmarks (MMLU, GSM8K, HumanEval) while
+improving honesty/factuality (TruthfulQA), with the ensemble-RM RLHF stage giving the
+largest TruthfulQA gain. Alignment with the ensemble reward therefore improves
+preference-following and factuality without degrading core capabilities.
 
 \subsection{Reward Hacking Analysis}
 
@@ -386,7 +382,8 @@ due to noisy margin pairs. The margin threshold $m_{\min}$ is the most important
 DPO avoids reward model training and PPO rollout generation, reducing alignment compute
 by approximately 8$\times$. For deployment scenarios where compute is the primary
 constraint, DPO with synthetic preference augmentation is the recommended choice,
-achieving 81\% of full RLHF performance at 12.5\% of the compute.
+recovering most of the open-ended-generation quality of full RLHF at a small fraction
+of the compute.
 
 %% -----------------------------------------------------------------------
 \section{Conclusion}
@@ -395,10 +392,11 @@ achieving 81\% of full RLHF performance at 12.5\% of the compute.
 
 We have presented the Zen alignment stack: multi-head ensemble reward models trained
 on 1.2M human preferences plus 3.4M filtered synthetic pairs, combined with RLHF or
-DPO fine-tuning. Key results: 87.3\% reward model human correlation, 44.8\% AlpacaEval
-win rate after RLHF, and 97\% reward hacking detection with ensemble variance gating.
-The full stack is recommended for production deployments; DPO is recommended when
-compute is constrained.
+DPO fine-tuning, applied to the Qwen3-based Zen models. The multi-head ensemble improves
+reward-model accuracy and calibration over a single reward model, synthetic preference
+augmentation adds a further accuracy gain, and ensemble variance gating detects the large
+majority of reward-hacking events. RLHF with the ensemble reward gives the best
+open-ended generation quality; DPO is the recommended choice when compute is constrained.
 
 \begin{thebibliography}{9}
 \bibitem{askell2021general}

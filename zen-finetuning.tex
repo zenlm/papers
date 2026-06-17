@@ -40,8 +40,8 @@ at 15\% compute overhead; (5) QLoRA enables Zen-32B fine-tuning on a single A100
 
 Fine-tuning pre-trained language models to new domains and tasks is a fundamental
 capability requirement. Zen models are designed to be efficiently fine-tunable:
-the MoDE architecture's expert routing provides natural structure for domain adaptation,
-and the modular design facilitates targeted weight updates.
+the dense and mixture-of-experts variants both expose modular structure that
+facilitates targeted weight updates during domain adaptation.
 
 Practitioners face several questions: Should I use LoRA or full fine-tuning?
 How much data do I need? What learning rate? How do I prevent forgetting my
