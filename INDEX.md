@@ -29,7 +29,6 @@ Auto-generated catalogue of research papers.
 | `zen-enterprise-deployment` | ✓ | `zen-enterprise-deployment.tex` |
 | `zen-financial-ai` | ✓ | `zen-financial-ai.tex` |
 | `zen-finetuning` | ✓ | `zen-finetuning.tex` |
-| `zen-foley` | ✓ | `zen-foley.tex` |
 | `zen-guard-gen_whitepaper` | ✓ | `zen-guard-gen_whitepaper.tex` |
 | `zen-guard-stream_whitepaper` | ✓ | `zen-guard-stream_whitepaper.tex` |
 | `zen-hallucination-reduction` | ✓ | `zen-hallucination-reduction.tex` |
@@ -41,7 +40,6 @@ Auto-generated catalogue of research papers.
 | `zen-mathematical-reasoning` | ✓ | `zen-mathematical-reasoning.tex` |
 | `zen-max_whitepaper` | ✓ | `zen-max_whitepaper.tex` |
 | `zen-medical` | ✓ | `zen-medical.tex` |
-| `zen-mixture-of-experts` | ✓ | `zen-mixture-of-experts.tex` |
 | `zen-multilingual` | ✓ | `zen-multilingual.tex` |
 | `zen-multimodal-architecture` | ✓ | `zen-multimodal-architecture.tex` |
 | `zen-musician` | ✓ | `zen-musician.tex` |
@@ -57,11 +55,9 @@ Auto-generated catalogue of research papers.
 | `zen-training-methodology` | ✓ | `zen-training-methodology.tex` |
 | `zen-translator` | ✓ | `zen-translator.tex` |
 | `zen-video-i2v_whitepaper` | ✓ | `zen-video-i2v_whitepaper.tex` |
-| `zen-video` | ✓ | `zen-video.tex` |
 | `zen-vision-architecture` | ✓ | `zen-vision-architecture.tex` |
 | `zen-vl_whitepaper` | ✓ | `zen-vl_whitepaper.tex` |
 | `zen-voice-clone` | ✓ | `zen-voice-clone.tex` |
-| `zen-voyager` | ✓ | `zen-voyager.tex` |
 | `zen-world` | ✓ | `zen-world.tex` |
 | `zen3-embedding_whitepaper` | ✓ | `zen3-embedding_whitepaper.tex` |
 | `zen3-guard_whitepaper` | ✓ | `zen3-guard_whitepaper.tex` |
@@ -79,4 +75,4 @@ Auto-generated catalogue of research papers.
 | `zen4-ultra_whitepaper` | ✓ | `zen4-ultra_whitepaper.tex` |
 | `zen5_whitepaper` | (pending) | `zen5_whitepaper.tex` |
 
-**Total**: 74 papers, 151 PDFs compiled
+**Total**: 70 papers, 151 PDFs compiled

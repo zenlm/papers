@@ -33,9 +33,11 @@
     \vspace{0.5cm}
     \Huge \textbf{Zen-Director} \\
     \vspace{0.3cm}
-    \large Video Scene Generation, Storyboarding, and Cinematic Direction \\
+    \large Single-GPU Unified Text- and Image-to-Video Generation \\
+    \vspace{0.2cm}
+    \large \normalsize A Packaging of Alibaba's Wan2.2-TI2V-5B (Apache-2.0) \\
     \vspace{0.5cm}
-    \normalsize Technical Report v2025.01
+    \normalsize Technical Report
 }
 
 \author{
@@ -43,23 +45,28 @@
     Zoo Labs Foundation\thanks{foundation@zoo.ngo}
 }
 
-\date{January 2025}
+\date{2026}
 
 \begin{document}
 
 \maketitle
 
 \begin{abstract}
-We present \textbf{Zen-Director}, a 7-billion parameter vision-language model specialized for
-video scene generation, cinematographic planning, and multi-shot storyboard synthesis.
-Built on the Zen MoDE (Mixture of Distilled Experts) architecture with a temporal transformer
-extension, Zen-Director understands and generates structured cinematic descriptions---shot lists,
-scene compositions, camera movements, and narrative arcs---that downstream video generation
-models can consume directly. The model achieves BLEU-4 of 0.423 on the VideoCaption benchmark,
-81.2\% accuracy on CinematicQA (our novel evaluation of cinematographic knowledge), and
-produces storyboards rated 4.1/5.0 by professional cinematographers in blind evaluation.
-Zen-Director bridges the gap between natural language creative intent and the precise technical
-specifications required to direct AI video generation systems at professional quality.
+\textbf{Zen-Director} is a permissively licensed redistribution and integration of
+\textbf{Wan2.2-TI2V-5B}, the open-source unified text- and image-to-video generation model
+released by the Alibaba Wan team (\texttt{Wan-AI/Wan2.2-TI2V-5B}) under the
+\textbf{Apache-2.0 license}~\cite{wan22hf,wan22github}. Zen-Director is \emph{not} a
+from-scratch model: it packages Wan2.2-TI2V-5B---a 5-billion-parameter \emph{dense} diffusion
+transformer trained with flow matching, paired with the high-compression Wan2.2 3D causal
+VAE---into the Zen model family with consistent tooling, weights distribution, and
+serving integration. The defining property of Wan2.2-TI2V-5B is that it generates 720P video
+at 24~fps on a \emph{single consumer-grade GPU} (e.g. an NVIDIA RTX~4090 with under 24~GB of
+VRAM), generating a 5-second 720P clip in under nine minutes without specialized
+optimization~\cite{wan22hf,wan22github}. A single unified framework natively serves both
+text-to-video (T2V) and image-to-video (I2V). This report documents the model we redistribute,
+its true architecture, its capabilities, and how it is integrated into the Zen stack. All
+architectural facts and figures below are reported by the upstream Wan team; we add no
+independent benchmarks.
 \end{abstract}
 
 \tableofcontents
@@ -67,19 +74,23 @@ specifications required to direct AI video generation systems at professional qu
 
 \section{Introduction}
 
-The rapid maturation of text-to-video generation systems has exposed a critical bottleneck:
-the gap between a creator's high-level creative intent and the precise technical specifications
-these systems require to produce coherent, professional-quality video. Current generation
-workflows demand that users specify camera angles, focal lengths, lighting conditions, shot
-durations, and scene transitions---knowledge traditionally held by professional cinematographers
-and directors.
+Open-source video generation has reached the point where high-resolution, high-frame-rate
+synthesis is feasible on a single consumer GPU. The Alibaba Wan team's \textbf{Wan2.2}
+family~\cite{wan22github,wan21paper} is a leading example of this shift. Within that family,
+\textbf{Wan2.2-TI2V-5B} is a compact 5-billion-parameter \emph{dense} model that unifies
+text-to-video and image-to-video generation and runs within the memory budget of widely
+available hardware. Crucially, both the code and the weights are released under the
+\textbf{Apache-2.0 license}~\cite{wan22hf,wan22github}, which permits commercial redistribution
+and modification with attribution.
 
-Zen-Director addresses this bottleneck as a \textbf{directorial intelligence}: a model that
-understands narrative intent and translates it into actionable cinematic specifications. Rather
-than generating video pixels directly, Zen-Director generates structured \textbf{shot plans}:
-hierarchical scene descriptions that video generation systems consume as structured prompts.
+\textbf{Zen-Director} is our packaging of Wan2.2-TI2V-5B. We make no claim to having designed,
+trained, or fine-tuned a new architecture. Our contribution is integration: distributing the
+upstream Apache-2.0 weights through the Zen model family, wiring the model into the Zen serving
+and tooling stack, and providing a consistent interface alongside other Zen models. This
+document therefore describes the \emph{real} Wan2.2-TI2V-5B architecture and capabilities so
+that users of Zen-Director understand exactly what they are running and under what license.
 
-\subsection{Model Overview}
+\subsection{Provenance and License}
 
 \begin{table}[H]
 \centering
@@ -87,261 +98,202 @@ hierarchical scene descriptions that video generation systems consume as structu
 \toprule
 \textbf{Property} & \textbf{Value} \\
 \midrule
-Parameters & 7B \\
-Architecture & Zen MoDE 7B + Temporal Transformer \\
-Context Length & 32K tokens + 512 video frames \\
-Visual Encoder & ViT-L/14 (336px) \\
-Temporal Depth & 12 temporal transformer layers \\
-Shot Plan Format & Structured JSON + prose description \\
-Training Data & 8.2M scene-annotation pairs, 1.4M film scripts \\
+Upstream model & Wan2.2-TI2V-5B \\
+Upstream author & Alibaba Wan team (Wan-Video / Wan-AI) \\
+Upstream repository & \texttt{Wan-AI/Wan2.2-TI2V-5B} (Hugging Face) \\
+License & Apache-2.0 \\
+Zen-Director role & Packaging / integration, not from-scratch training \\
+Modality & Unified text-to-video (T2V) + image-to-video (I2V) \\
 \bottomrule
 \end{tabular}
-\caption{Zen-Director Model Specifications}
+\caption{Zen-Director provenance. Zen-Director redistributes the upstream model under its
+original Apache-2.0 license with attribution to the Alibaba Wan team.}
+\end{table}
+
+\subsection{Model Overview}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Property} & \textbf{Value (as reported upstream~\cite{wan22hf,wan22github})} \\
+\midrule
+Parameters & 5B (dense; not Mixture-of-Experts) \\
+Architecture & Diffusion Transformer (DiT) + Wan2.2 3D causal VAE \\
+Text encoder & umT5 (multilingual) \\
+Training objective & Flow matching \\
+VAE compression ($T\times H\times W$) & $4\times16\times16$ (overall rate $\approx 64$) \\
+With patchification & $4\times32\times32$ \\
+Output resolution & 720P ($1280\times704$ or $704\times1280$) \\
+Frame rate & 24 fps \\
+Clip length & up to 5 seconds \\
+Text input & up to 512 tokens \\
+Image input (I2V) & up to $1280\times704$ \\
+GPU requirement & single consumer GPU, $<24$ GB VRAM (e.g. RTX 4090) \\
+Reported speed & 5-second 720P clip in $<9$ minutes (single GPU, no special optimization) \\
+\bottomrule
+\end{tabular}
+\caption{Wan2.2-TI2V-5B specifications as reported by the upstream Wan team. Zen-Director
+redistributes these weights unchanged.}
 \end{table}
 
 \subsection{Key Capabilities}
 
 \begin{itemize}
-    \item \textbf{Scene storyboarding}: Convert natural language scene descriptions into
-    complete shot-by-shot storyboards with camera specifications.
-    \item \textbf{Shot composition}: Recommend and generate compositional guidelines (rule of
-    thirds, leading lines, depth of field) for each shot.
-    \item \textbf{Narrative arc planning}: Structure multi-scene video narratives with consistent
-    pacing, tension arcs, and visual motifs.
-    \item \textbf{Cinematic vocabulary}: Understand and generate industry-standard cinematographic
-    terminology (establishing shot, dolly zoom, rack focus, etc.).
-    \item \textbf{Video comprehension}: Analyze existing video clips and generate directorial
-    notes describing their cinematographic techniques.
+    \item \textbf{Unified text-to-video}: Generate a 720P, 24~fps clip (up to 5~seconds) from
+    a text prompt of up to 512 tokens.
+    \item \textbf{Unified image-to-video}: Animate a reference image (up to $1280\times704$)
+    into a coherent video within the same single framework.
+    \item \textbf{Single-GPU operation}: Run end-to-end on one consumer-grade GPU with under
+    24~GB of VRAM, enabled by the high-compression 3D causal VAE.
+    \item \textbf{Permissive licensing}: Apache-2.0 weights and code, suitable for commercial
+    redistribution with attribution.
 \end{itemize}
 
 \section{Architecture}
 
-\subsection{Zen MoDE 7B Language Backbone}
+Zen-Director runs the Wan2.2-TI2V-5B model unchanged. Its architecture follows the Wan design
+lineage~\cite{wan21paper,wan22github}: a 3D causal variational autoencoder (VAE), a umT5 text
+encoder, and a diffusion transformer (DiT), trained with flow matching. We describe each
+component as documented upstream.
 
-The language backbone is Zen MoDE at 7B scale: 28 transformer layers, 28 attention heads with
-grouped-query attention (4 KV heads), and MoE feed-forward networks (4 experts, top-2 routing).
-This provides strong natural language understanding for parsing creative briefs and generating
-rich cinematic descriptions.
+\subsection{5B Dense Diffusion Transformer}
 
-\subsection{Visual Encoder}
+The generative backbone is a \emph{dense} diffusion transformer with approximately 5 billion
+parameters~\cite{wan22hf,wan22github}. Unlike the larger Wan2.2 A14B variants---which use a
+Mixture-of-Experts design with a high-noise expert for early denoising and a low-noise expert
+for later refinement---the TI2V-5B model is a single dense network with no expert routing. The
+DiT operates on the compressed video latents produced by the VAE: a patchifying module forms
+tokens from the latent, a stack of transformer blocks denoises them while attending to the text
+embedding via cross-attention, and an unpatchifying module reconstructs the latent.
 
-A ViT-L/14 vision encoder operating at 336px resolution encodes reference images and video
-frames into 256 visual tokens per frame. A two-layer MLP projection maps visual tokens into
-the language model's embedding space.
+\subsection{High-Compression Wan2.2 3D Causal VAE}
 
-\subsection{Temporal Transformer Extension}
+The capability that lets a 720P 24~fps video model fit on a single 24~GB GPU is the
+high-compression \textbf{Wan2.2-VAE}, a 3D causal autoencoder~\cite{wan22github,wan22hf}. It
+achieves a spatio-temporal ($T\times H\times W$) compression ratio of $4\times16\times16$,
+raising the overall information compression rate to roughly~64 while maintaining high-quality
+reconstruction. Combined with the patchification applied inside the DiT, the effective spatial
+reduction reaches $4\times32\times32$. The 3D \emph{causal} structure preserves temporal
+causality across frames and substantially reduces the memory footprint of the latent sequence,
+which is what makes single-GPU 720P generation practical.
 
-The key architectural innovation is a 12-layer temporal transformer that operates \textit{across}
-frames rather than within them. Given $T$ frames, each encoded to 256 tokens, the temporal
-transformer attends over the time dimension to build a coherent representation of motion,
-continuity, and scene evolution:
+\subsection{umT5 Text Encoder}
 
+Text conditioning uses the umT5 multilingual text encoder~\cite{wan21paper}, which encodes the
+input prompt (up to 512 tokens) into embeddings consumed by the DiT through cross-attention.
+The Wan team selected umT5 for its strong multilingual (notably Chinese and English) encoding
+and favorable training convergence.
+
+\subsection{Flow-Matching Training Objective}
+
+The diffusion transformer is trained with \textbf{flow matching}~\cite{wan21paper}. Given a
+target latent $x_1$, a noise sample $x_0$, and a timestep $t \in [0,1]$, the training input is
+the linear interpolation
 \begin{equation}
-    H_{\text{temporal}} = \text{TransformerEncoder}([h_1^{CLS}, h_2^{CLS}, \ldots, h_T^{CLS}])
+    x_t = (1-t)\,x_0 + t\,x_1 ,
 \end{equation}
+and the model is trained to predict the velocity field
+\begin{equation}
+    v_t = x_1 - x_0 .
+\end{equation}
+At inference, samples are produced by integrating the learned velocity field, avoiding iterative
+per-step velocity re-prediction schemes used by some alternative diffusion formulations.
 
-where $h_t^{CLS}$ is the CLS token representation of frame $t$ from the visual encoder.
-The temporal representation is concatenated with text tokens before the language model's
-cross-attention layers.
+\subsection{Unified T2V + I2V Framework}
 
-\subsection{Shot Plan Generation}
+A single model serves both modalities~\cite{wan22hf,wan22github}. For text-to-video the model is
+conditioned on the umT5 text embedding alone; for image-to-video the reference image (up to
+$1280\times704$) provides additional conditioning. Both paths share the same VAE, DiT, and
+flow-matching sampler, so no separate model or checkpoint is required to switch between
+text-driven and image-driven generation.
 
-Zen-Director generates shot plans as structured JSON objects:
+\section{Inference and Integration}
 
-\begin{lstlisting}[language=Python, caption=Shot Plan Schema]
-{
-  "scene": {
-    "id": "s01",
-    "location": "rain-soaked rooftop, night",
-    "mood": "tense, noir",
-    "duration_sec": 45
-  },
-  "shots": [
-    {
-      "id": "s01_001",
-      "type": "establishing",
-      "camera": {"position": "wide", "angle": "high angle", "move": "slow push in"},
-      "focal_length": "24mm",
-      "subject": "city skyline with protagonist silhouette",
-      "duration_sec": 8,
-      "lighting": "practical neon, rain reflections",
-      "notes": "City should feel overwhelming relative to protagonist"
-    }
-  ]
-}
+\subsection{Running Zen-Director}
+
+Because Zen-Director is the upstream Wan2.2-TI2V-5B model, it is invoked through the standard
+Wan2.2 generation interface. The example below illustrates the conceptual call (refer to the
+upstream repository for the authoritative API and flags)~\cite{wan22github}.
+
+\begin{lstlisting}[language=Python, caption=Invoking Zen-Director (Wan2.2-TI2V-5B)]
+# Text-to-video: 720P, 24 fps, up to 5 seconds, single 24GB GPU
+generate(
+    task="ti2v-5B",
+    size="1280*704",
+    prompt="a lighthouse at dusk, waves breaking, slow push-in",
+)
+
+# Image-to-video: animate a reference image in the same framework
+generate(
+    task="ti2v-5B",
+    size="1280*704",
+    image="reference.png",
+    prompt="gentle camera drift, wind moving through grass",
+)
 \end{lstlisting}
 
-\section{Training}
+\subsection{Hardware Footprint}
 
-\subsection{Dataset}
+The upstream Wan team reports that Wan2.2-TI2V-5B generates a 5-second 720P (24~fps) clip in
+under nine minutes on a single consumer-grade GPU, without specialized optimization, within a
+sub-24~GB VRAM budget such as an NVIDIA RTX~4090~\cite{wan22hf,wan22github}. This single-GPU
+profile is the primary reason Zen-Director is suitable for self-hosted and on-premise
+deployments where multi-GPU clusters are unavailable.
 
-\begin{table}[H]
-\centering
-\begin{tabular}{lrrl}
-\toprule
-\textbf{Source} & \textbf{Samples} & \textbf{Proportion} & \textbf{Content} \\
-\midrule
-Film scripts + frames & 2,400,000 & 29.3\% & Script-to-scene alignment \\
-Cinematography textbooks & 180,000 & 2.2\% & Technical knowledge \\
-Film criticism corpus & 820,000 & 10.0\% & Aesthetic analysis \\
-Video-caption pairs & 3,100,000 & 37.8\% & Visual understanding \\
-Storyboard collections & 1,700,000 & 20.7\% & Shot plan examples \\
-\midrule
-\textbf{Total} & \textbf{8,200,000} & 100\% & \\
-\bottomrule
-\end{tabular}
-\caption{Zen-Director Training Data}
-\end{table}
+\subsection{Role in the Zen Stack}
 
-\subsection{Training Protocol}
+Within the Zen model family, Zen-Director is the video-generation component. It consumes a text
+prompt (and optionally a reference image) and produces video, complementing other Zen models
+that handle language and image tasks. Integration consists of distributing the Apache-2.0
+weights, exposing the unified T2V/I2V interface through Zen tooling, and providing consistent
+serving alongside the rest of the family. No retraining or architectural modification is
+performed.
 
-\textbf{Stage 1 -- Visual encoder alignment} (20K steps): The ViT encoder and MLP projection
-are trained to align visual representations with cinematic language descriptions.
+\section{Reported Results}
 
-\textbf{Stage 2 -- Temporal pretraining} (40K steps): The temporal transformer is pretrained
-on video sequences with a masked-frame prediction objective.
+The Wan team positions Wan2.2-TI2V-5B as one of the fastest 720P@24fps open models currently
+available and reports favorable quality on its internal Wan-Bench~2.0 evaluation relative to
+contemporary models~\cite{wan22github}. The public model card does not publish a specific
+per-metric VBench table for the TI2V-5B variant, and \emph{we deliberately report no
+independent benchmark numbers of our own}: Zen-Director redistributes the upstream weights
+without modification, so any quantitative claims should be taken from, and attributed to, the
+upstream Wan releases~\cite{wan22hf,wan22github,wan21paper}.
 
-\textbf{Stage 3 -- Directorial SFT} (60K steps): The full model is fine-tuned on storyboard
-generation, scene description, and cinematographic Q\&A tasks jointly.
+\section{Licensing and Attribution}
 
-\textbf{Stage 4 -- RLHF from cinematographers} (15K steps): A reward model trained on 50,000
-pairwise comparisons from professional cinematographers (recruited via film school partnerships)
-is used to further refine shot plan quality via PPO.
-
-\section{Evaluation}
-
-\subsection{VideoCaption Benchmark}
-
-We evaluate video description quality on a held-out set of 5,000 film clips spanning 20 genres.
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Model} & \textbf{BLEU-4} & \textbf{METEOR} & \textbf{CIDEr} & \textbf{ROUGE-L} \\
-\midrule
-BLIP-2 & 0.281 & 0.314 & 0.872 & 0.512 \\
-InstructBLIP & 0.308 & 0.341 & 0.941 & 0.534 \\
-VideoChat2 & 0.352 & 0.374 & 1.021 & 0.561 \\
-Video-LLaMA2 & 0.387 & 0.402 & 1.103 & 0.584 \\
-\textbf{Zen-Director} & \textbf{0.423} & \textbf{0.441} & \textbf{1.187} & \textbf{0.612} \\
-\bottomrule
-\end{tabular}
-\caption{VideoCaption Benchmark Results (higher is better)}
-\end{table}
-
-\subsection{CinematicQA}
-
-CinematicQA is a novel benchmark we introduce comprising 2,000 multiple-choice questions
-testing cinematographic knowledge: shot types, camera movements, lighting techniques, editing
-principles, and genre conventions. Questions were authored by five professional cinematographers.
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lc}
-\toprule
-\textbf{Model} & \textbf{Accuracy (\%)} \\
-\midrule
-GPT-4o (zero-shot) & 68.3 \\
-Claude 3.5 Sonnet & 71.4 \\
-Gemini 1.5 Pro & 66.8 \\
-Specialist fine-tuned 7B & 74.2 \\
-\textbf{Zen-Director 7B} & \textbf{81.2} \\
-\bottomrule
-\end{tabular}
-\caption{CinematicQA Accuracy (\%)}
-\end{table}
-
-\subsection{Professional Storyboard Evaluation}
-
-Twenty professional cinematographers evaluated storyboards generated from 100 scene descriptions,
-rating each on a 5-point scale across five dimensions.
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lc}
-\toprule
-\textbf{Dimension} & \textbf{Mean Score (1--5)} \\
-\midrule
-Technical accuracy of shot specifications & 4.3 \\
-Narrative coherence across shots & 4.1 \\
-Creative quality / originality & 3.9 \\
-Pacing appropriateness & 4.0 \\
-Overall directorial vision & 4.1 \\
-\midrule
-\textbf{Overall Mean} & \textbf{4.1} \\
-\bottomrule
-\end{tabular}
-\caption{Professional Cinematographer Evaluation (N=20 evaluators, 100 storyboards)}
-\end{table}
-
-\subsection{Downstream Video Generation Quality}
-
-We evaluate whether Zen-Director shot plans improve final video quality when used as structured
-prompts for a text-to-video generation system. Using the same creative brief:
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lcc}
-\toprule
-\textbf{Prompt Method} & \textbf{Human Preference (\%)} & \textbf{FVD} $\downarrow$ \\
-\midrule
-Raw creative brief (baseline) & 18.4\% & 412 \\
-Manual cinematographer spec & 42.1\% & 287 \\
-Zen-Director shot plan & 39.5\% & 298 \\
-\bottomrule
-\end{tabular}
-\caption{Downstream Video Quality with Zen-Director Shot Plans}
-\end{table}
-
-Zen-Director reaches 94\% of manual cinematographer performance at a fraction of the cost and
-time, validating its role as an effective creative intermediary.
-
-\section{Applications}
-
-\subsection{AI Film Production Pipeline}
-
-Zen-Director is integrated into the Hanzo AI film production pipeline as the directorial layer
-between a human creative brief and the Zen-Video generation system. A typical workflow:
-
-\begin{enumerate}
-    \item Human writes a scene description in natural language.
-    \item Zen-Director generates a shot plan JSON with full cinematographic specs.
-    \item Human reviews and optionally edits the shot plan (typically 3--5 minutes).
-    \item Zen-Video consumes the shot plan and generates video clips per shot.
-    \item Zen-Director evaluates temporal consistency across clips and suggests retakes.
-\end{enumerate}
-
-\subsection{Film Education}
-
-Zen-Director serves as an interactive cinematography tutor: students can submit scene
-descriptions and receive expert-level directorial notes explaining the reasoning behind
-each shot choice.
-
-\subsection{Video Game Cutscene Direction}
-
-Game studios use Zen-Director to generate cinematic specifications for in-engine cutscene
-directors, reducing the time from narrative script to playable sequence by an estimated 60\%.
+Zen-Director is governed by the \textbf{Apache-2.0 license} of the upstream
+Wan2.2-TI2V-5B release~\cite{wan22hf,wan22github}. Redistribution under the Zen name retains
+this license and includes attribution to the Alibaba Wan team as the originating authors of the
+model, weights, and architecture. Apache-2.0 permits commercial use, modification, and
+redistribution provided the license and notices are preserved. Users remain responsible for
+ensuring that generated content complies with applicable laws and does not infringe third-party
+rights.
 
 \section{Related Work}
 
-Video understanding models (VideoChat, Video-LLaMA) focus primarily on description generation.
-Text-to-video generation systems (Sora, CogVideo, ModelScope) focus on pixel synthesis.
-Zen-Director uniquely occupies the directorial planning layer between these two stages,
-drawing on the rich tradition of computational narrative research and cinematography theory.
+Wan2.2-TI2V-5B belongs to the broader Wan family of open large-scale video generative
+models~\cite{wan21paper,wan22github}, which also includes the larger A14B Mixture-of-Experts
+text-to-video and image-to-video models. The Wan line builds on the diffusion-transformer
+approach to video synthesis, combining a 3D causal VAE for efficient latent representation, a
+multilingual text encoder, and flow-matching training. Zen-Director's specific value is in
+making the compact, single-GPU TI2V-5B configuration of this family conveniently available and
+integrated within the Zen stack.
 
 \section{Conclusion}
 
-Zen-Director establishes a new model category: the AI cinematographer. By training on film
-scripts, storyboards, and cinematographic knowledge at 7B scale, the model achieves 81.2\%
-on CinematicQA and generates shot plans rated 4.1/5 by professional cinematographers.
-Integration with the Zen-Video generation backbone creates a complete AI film production
-pipeline from creative brief to rendered footage.
+Zen-Director is an honest redistribution of Alibaba's Apache-2.0 Wan2.2-TI2V-5B model: a 5B
+dense diffusion transformer with a high-compression 3D causal VAE that generates 720P, 24~fps
+video from text or images on a single consumer GPU. It is not a from-scratch architecture and
+introduces no new benchmarks; its contribution is packaging and integration. By attributing the
+upstream Wan team and preserving the Apache-2.0 license, Zen-Director brings state-of-the-art,
+permissively licensed, single-GPU video generation into the Zen model family with full
+transparency about its provenance.
 
 \begin{thebibliography}{10}
-\bibitem{li2023blip} J. Li et al., ``BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Models,'' ICML, 2023.
-\bibitem{videochat} K. Li et al., ``VideoChat: Chat-Centric Video Understanding,'' arXiv:2305.06355, 2023.
-\bibitem{makarov2022} A. Makarov et al., ``Computational Cinematography: A Survey,'' IEEE TPAMI, 2022.
+\bibitem{wan22hf} Alibaba Wan team, ``Wan2.2-TI2V-5B,'' Hugging Face model card, \texttt{Wan-AI/Wan2.2-TI2V-5B}. \url{https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B}. License: Apache-2.0.
+\bibitem{wan22github} Wan-Video, ``Wan2.2: Open and Advanced Large-Scale Video Generative Models,'' GitHub repository. \url{https://github.com/Wan-Video/Wan2.2}. License: Apache-2.0.
+\bibitem{wan21paper} Wan team, ``Wan: Open and Advanced Large-Scale Video Generative Models,'' arXiv:2503.20314, 2025. \url{https://arxiv.org/abs/2503.20314}.
 \end{thebibliography}
 
 \end{document}
