@@ -166,15 +166,7 @@ Zen models use **Zen MoDE (Mixture of Distilled Experts)** architecture, emphasi
 - **Status**: ✅ Ready for compilation
 - **File**: `zen-3d.tex`
 
-#### 16. Zen-Foley (Audio Effects)
-- **Version**: v2025.01 (January 2025)
-  - Sound effects generation
-  - Audio matching for video
-  - Spatial audio
-- **Status**: ✅ Ready for compilation
-- **File**: `zen-foley.tex`
-
-#### 17. Zen-Musician
+#### 16. Zen-Musician
 - **Version**: v2025.01 (January 2025)
   - Music composition
   - Multiple genres
@@ -205,22 +197,6 @@ Zen models use **Zen MoDE (Mixture of Distilled Experts)** architecture, emphasi
   - Causal reasoning
 - **Status**: ✅ Ready for compilation
 - **File**: `zen-world.tex`
-
-#### 21. Zen-Video
-- **Version**: v2025.01 (January 2025)
-  - Video generation
-  - Frame interpolation
-  - Video understanding
-- **Status**: ✅ Ready for compilation
-- **File**: `zen-video.tex`
-
-#### 22. Zen-Voyager (Exploration)
-- **Version**: v2025.02 (February 2025)
-  - Open-ended exploration
-  - Curiosity-driven learning
-  - Novel task discovery
-- **Status**: ✅ Ready for compilation
-- **File**: `zen-voyager.tex`
 
 ---
 
@@ -304,8 +280,8 @@ Each paper includes:
 - **October 2024**: Zen-Nano (0.6B edge model)
 - **November 2024**: Zen-Coder, Zen-Eco, Zen-Scribe
 - **December 2024**: Zen-Artist family, Zen-Guard, Core papers (zen-base, zen-technical-paper)
-- **January 2025**: Zen-Omni, Zen-Next, Extended family (3D, Foley, Musician, Director, Agent, World)
-- **February 2025**: Zen-World, Zen-Voyager, Zen-VL, Zen-Coder-Flash, Zen-Inference-Optimization
+- **January 2025**: Zen-Omni, Zen-Next, Extended family (3D, Musician, Director, Agent, World)
+- **February 2025**: Zen-World, Zen-VL, Zen-Coder-Flash, Zen-Inference-Optimization
 - **March 2025**: Zen3 family (Nano, Omni, VL, Guard, Embedding), Zen-Code, Zen-Dub, Zen-Video-I2V
 - **April 2025**: Zen-Live, Zen-Guard-Gen/Stream, Context Extension, Fine-tuning, Architecture papers
 - **May 2025**: Domain papers (Medical, Financial, Legal, Privacy), Reward Modeling, Distillation
