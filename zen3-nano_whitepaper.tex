@@ -13,7 +13,7 @@
 \definecolor{zenblue}{RGB}{41,121,255}
 \hypersetup{colorlinks=true,linkcolor=zenblue,urlcolor=zenblue,citecolor=zenblue}
 
-\title{\textbf{Zen3-Nano: Third-Generation Ultra-Compact Edge Intelligence}\\
+\title{\textbf{Zen3-Nano: A Compact-Deployment Finetune of Qwen3-8B}\\
 \large Technical Whitepaper v2025.06}
 \author{Zach Kelling \\ Zen LM Research Team\\
 \texttt{research@zenlm.org}\\
@@ -24,16 +24,18 @@
 \maketitle
 
 \begin{abstract}
-Zen3-Nano is the third-generation 0.6B parameter edge model from the Zen family, achieving
-significant quality improvements over Zen-Nano through architectural refinements and enhanced
-knowledge distillation from the full Zen family hierarchy. Built on the Zen MoDE (Mixture of
-Distilled Experts) architecture, Zen3-Nano maintains a sub-250MB quantized footprint while
-delivering improved reasoning capabilities on mobile and embedded hardware. At 4-bit
-quantization the model fits in 250MB and achieves 2800 tokens per second on Apple A16 Bionic
-silicon, enabling real-time language inference at the edge without network connectivity.
-The model sets new state-of-the-art results for the sub-1B parameter class: MMLU 47.3\%,
-TriviaQA 61.2\%, and GSM8K 52.4\%, demonstrating that frontier distillation techniques close
-the gap between edge and server-class models substantially.
+Zen3-Nano is a packaging- and deployment-focused member of the Zen family. Despite the ``Nano''
+name, the released Zen3-Nano weights are \emph{not} a 0.6B-parameter from-scratch model: configuration
+fingerprinting shows an 8B-class dense transformer matching \textbf{Qwen3-8B} \cite{qwen3report}, the
+open-weight model released by Alibaba's Qwen team under the Apache-2.0 license. Earlier versions of
+this whitepaper described a bespoke ``Zen MoDE (Mixture of Distilled Experts)'' architecture, a 0.6B
+parameter count, a from-scratch 2-trillion-token pretraining run, and a hierarchical-distillation
+pipeline from ``Zen3-Mini/Small/Medium'' teachers. Those claims do not match the shipped artifact and
+have been removed. This corrected whitepaper documents the actual Qwen3-8B base, the light
+instruction tuning and quantization-for-deployment work the Zen team performs, and defers to the
+upstream Qwen3 technical report for pretraining and benchmark numbers. Quantized GGUF/MLX builds are
+provided for convenient deployment; the genuine ``small'' tiers of the Qwen3 family (0.6B, 1.7B, 4B)
+are noted as the appropriate bases for true edge use.
 \end{abstract}
 
 \tableofcontents
@@ -43,315 +45,209 @@ the gap between edge and server-class models substantially.
 \section{Introduction}
 \label{sec:intro}
 
-On-device AI inference has become a primary deployment target for consumer applications,
-IoT sensors, and privacy-sensitive enterprise workloads. The constraints are severe: models
-must fit within a few hundred megabytes, execute without accelerators on ARM Cortex-class
-CPUs, and return responses in tens of milliseconds. Existing sub-1B approaches sacrifice
-too much quality to be practically useful for general-purpose instruction following.
+On-device and resource-constrained inference is an important deployment target, and quantization
+makes even 8B-class models broadly deployable. This whitepaper documents Zen3-Nano honestly,
+correcting prior inaccurate claims about its size and origin.
 
-Zen3-Nano addresses this challenge by combining three advances:
+\paragraph{Provenance and corrections.} The released Zen3-Nano weights fingerprint to
+\textbf{Qwen3-8B}: 36 layers, hidden size 4096, 32 query heads / 8 KV heads (GQA), head dimension
+128, FFN intermediate size 12{,}288, and a 151{,}936-token vocabulary \cite{qwen3hf}. This is an
+8.2B-parameter dense model released by the Qwen team at Alibaba Cloud under the Apache-2.0 license
+\cite{qwen3report}. The following earlier claims were inaccurate and are withdrawn:
 
-\begin{enumerate}
-\item \textbf{Hierarchical Zen MoDE distillation} --- structured distillation cascaded through
-      Zen3-Mini (1.7B), Zen3-Small (7B), and Zen3-Medium (14B) teachers, each contributing
-      a complementary signal.
-\item \textbf{Third-generation Nano architecture} --- refined attention with grouped-query
-      heads optimized for cache reuse on low-memory hardware, reduced KV cache footprint,
-      and fused MLPs that lower inference memory bandwidth.
-\item \textbf{BitDelta-aware training} --- the model is trained with quantization-aware
-      objectives derived from the Zoo Labs BitDelta protocol (ZIP-007), so the 4-bit
-      quantized artifact retains near-full-precision accuracy without post-hoc calibration.
-\end{enumerate}
-
-Zen3-Nano is designed to run natively on:
 \begin{itemize}
-\item Mobile SoCs (Apple A16 Bionic, Qualcomm Snapdragon 8 Gen 3, MediaTek Dimensity 9300)
-\item Microcontrollers with $\geq$512 KB SRAM (via WASM SIMD runtime)
-\item Browser environments via WebAssembly and WebGPU
-\item Embedded Linux (Raspberry Pi 5, NVIDIA Jetson Nano)
+\item ``0.6B parameters'' / ``sub-250MB'' / ``third-generation 0.6B edge model'' --- the shipped
+      model is 8B-class, not 0.6B.
+\item ``Zen MoDE (Mixture of Distilled Experts)'' architecture --- Qwen3-8B is a standard dense
+      transformer, not a mixture-of-experts model; there is no ``MoDE'' routing.
+\item ``Trained from scratch on a 2T-token corpus'' and ``hierarchical distillation from
+      Zen3-Mini/Small/Medium teachers'' --- no such from-scratch pretraining or teacher cascade was
+      performed by the Zen team; the base is the released Qwen3-8B.
+\item Specific benchmark figures (e.g., MMLU 47.3\%, GSM8K 52.4\%, and the per-hardware
+      tokens/second table) --- these were fabricated and are removed.
 \end{itemize}
 
+\paragraph{What Zen3-Nano actually is.} Zen3-Nano is a lightly instruction-tuned and quantized
+repackaging of Qwen3-8B aimed at easy local deployment. Its contributions are (i) optional light SFT
+for formatting/instruction style on top of Qwen3-8B, and (ii) ready-to-run quantized artifacts
+(GGUF for llama.cpp, MLX for Apple Silicon, ONNX). For genuinely tiny edge footprints, the Qwen3
+family also offers true small dense models---Qwen3-0.6B, Qwen3-1.7B, and Qwen3-4B (all Apache-2.0)
+\cite{qwen3report}---which are the appropriate bases when sub-1B size is a hard requirement.
+
 %% -----------------------------------------------------------------------
-\section{Architecture}
+\section{Architecture (Inherited from Qwen3-8B)}
 \label{sec:arch}
 
-\subsection{Zen MoDE Foundation}
+Zen3-Nano inherits the Qwen3-8B architecture unchanged: a dense decoder-only transformer with
+grouped-query attention, SwiGLU feed-forward blocks, RMSNorm, and rotary position embeddings. There
+is no mixture-of-experts component.
 
-Zen3-Nano is built on the Zen MoDE (Mixture of Distilled Experts) architecture, a
-design principle shared across the entire Zen family that replaces monolithic dense
-feed-forward blocks with sparsely-activated expert clusters. At the 0.6B scale, MoDE
-manifests as a lightweight routing mechanism that activates a subset of micro-experts
-per token, preserving capacity diversity while keeping the active parameter count
-well below memory limits.
+\begin{table}[H]
+\centering
+\caption{Architecture hyperparameters, inherited unchanged from Qwen3-8B \cite{qwen3hf}.}
+\begin{tabular}{lc}
+\toprule
+\textbf{Hyperparameter} & \textbf{Value} \\
+\midrule
+Parameters (total)         & 8.2B \\
+Non-embedding parameters   & 6.95B \\
+Layers                     & 36 \\
+Attention heads (query)    & 32 \\
+KV heads (GQA)             & 8 \\
+Head dimension             & 128 \\
+Hidden dimension           & 4096 \\
+FFN intermediate dimension & 12{,}288 \\
+Vocabulary size            & 151{,}936 \\
+Context length (native)    & 40{,}960 \\
+Context length (with YaRN) & 131{,}072 \\
+Position encoding          & RoPE ($\theta = 1{,}000{,}000$) \\
+Activation function        & SiLU (SwiGLU) \\
+Normalization              & RMSNorm \\
+Tied embeddings            & No \\
+\bottomrule
+\end{tabular}
+\label{tab:arch}
+\end{table}
 
-Formally, for input token representation $\mathbf{x} \in \mathbb{R}^d$, the MoDE feed-forward
-layer computes:
+\subsection{Grouped-Query Attention}
 
-\begin{equation}
-\text{MoDE}(\mathbf{x}) = \sum_{i \in \mathcal{K}(\mathbf{x})} g_i(\mathbf{x}) \cdot E_i(\mathbf{x})
-\end{equation}
+Qwen3-8B uses GQA \cite{ainslie2023gqa} with 32 query heads grouped onto 8 key-value heads (head
+dimension 128), reducing KV-cache memory relative to full multi-head attention. Rotary positional
+embeddings (RoPE) \cite{su2021rope} are used with base frequency $\theta = 1{,}000{,}000$; long
+context up to 131{,}072 tokens is available via YaRN scaling \cite{peng2023yarn} as configured
+upstream.
 
-where $\mathcal{K}(\mathbf{x})$ is the set of top-$k$ activated experts selected by a
-learned routing function, $g_i$ are normalized routing weights, and $E_i$ are the
-expert sub-networks.
+\subsection{Feed-Forward Network}
 
-\subsection{Grouped-Query Attention (GQA) Variant}
-
-Standard multi-head attention at 0.6B scale incurs disproportionate KV cache overhead
-relative to total parameter count. Zen3-Nano uses a 3rd-generation grouped-query attention
-variant with the following configuration:
-
-\begin{itemize}
-\item 16 query heads grouped into 4 key-value head groups
-\item 1024-dimensional hidden state, 64-dimensional head size
-\item Rotary positional embeddings (RoPE) with extended context via YaRN interpolation
-\item 32 transformer layers with pre-layer normalization (RMSNorm)
-\end{itemize}
-
-The KV cache per token occupies only 512 bytes at full precision, enabling 32K token
-context windows within 16 MB of SRAM when using 8-bit KV quantization.
-
-\subsection{Fused MLP Design}
-
-The feed-forward blocks use a fused SwiGLU activation with weight-sharing across
-adjacent expert pairs, reducing total parameter count by 12\% relative to a naive
-MoDE implementation at equivalent quality:
-
-\begin{equation}
-\text{FFN}(\mathbf{x}) = \left(\sigma(\mathbf{W}_1 \mathbf{x}) \odot \mathbf{W}_2 \mathbf{x}\right) \mathbf{W}_3
-\end{equation}
-
-\subsection{Quantization-Native Design}
-
-Unlike post-hoc quantization, Zen3-Nano is trained with BitDelta quantization-aware
-training from epoch 1. The quantization error $\epsilon_Q$ is included in the training
-loss as a regularizer:
+Each layer uses a SwiGLU feed-forward block \cite{shazeer2020glu}:
 
 \begin{equation}
-\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}} + \mathcal{L}_{\text{KD}} + \lambda \cdot \mathbb{E}\left[\|\mathbf{W} - Q(\mathbf{W})\|_F^2\right]
+\text{FFN}(\mathbf{x}) = \left(\text{SiLU}(\mathbf{x}\mathbf{W}_{\text{gate}}) \odot
+\mathbf{x}\mathbf{W}_{\text{up}}\right) \mathbf{W}_{\text{down}}
 \end{equation}
 
-where $Q(\cdot)$ is the 4-bit quantization operator and $\lambda = 0.01$.
+with intermediate dimension 12{,}288. There is no expert routing; the previously described
+``$\text{MoDE}(\mathbf{x}) = \sum_{i} g_i(\mathbf{x}) E_i(\mathbf{x})$'' formulation does not apply
+to this model.
 
 %% -----------------------------------------------------------------------
-\section{Training}
+\section{Post-Training and Quantization}
 \label{sec:training}
 
-\subsection{Pre-Training Data}
+The Zen team does not pretrain Zen3-Nano. Pretraining of the underlying Qwen3-8B was performed by the
+Qwen team; see the upstream technical report \cite{qwen3report} for the corpus, scale, and procedure.
+Our work on top of the released weights is limited to:
 
-Zen3-Nano is initialized from scratch on a 2T token corpus drawn from:
-\begin{itemize}
-\item Curated web text (Common Crawl quality-filtered): 60\%
-\item Code repositories (GitHub, GitLab, permissive licenses): 20\%
-\item Books, academic papers, structured knowledge: 15\%
-\item Multilingual data (50+ languages, weighted by speaker population): 5\%
-\end{itemize}
+\subsection{Light Instruction Tuning (Optional)}
 
-\subsection{Hierarchical Distillation}
+Where a chat-tuned variant is shipped, we apply light supervised fine-tuning on curated
+instruction--response data (response-masked loss, low learning rate, few epochs) to adjust formatting
+and instruction-following style. This does not constitute pretraining and does not materially change
+the base model's knowledge.
 
-After base pre-training, Zen3-Nano undergoes a three-stage distillation curriculum:
+\subsection{Quantization for Deployment}
 
-\textbf{Stage 1 (Token-level KL distillation)}: Soft targets from Zen3-Mini (1.7B) teacher
-over 500B tokens. Temperature $T=4.0$, KD weight $\alpha = 0.7$.
-
-\textbf{Stage 2 (Layer-level representation matching)}: Intermediate hidden states
-from Zen3-Small (7B) are used as representation targets via a learned projection head.
-Loss: cosine similarity maximization over layers $\{6, 12, 18, 24\}$.
-
-\textbf{Stage 3 (Reasoning chain distillation)}: Structured chain-of-thought traces
-generated by Zen3-Medium (14B) are used for supervised fine-tuning with a 3:1
-ratio of distilled traces to human annotations.
-
-\subsection{Instruction Fine-Tuning}
-
-Post-distillation instruction tuning uses a 50M token mix:
-\begin{itemize}
-\item General instruction following: 40\%
-\item Code generation and debugging: 25\%
-\item Mathematical reasoning (chain-of-thought): 20\%
-\item Multilingual instruction: 15\%
-\end{itemize}
-
-Training uses AdamW optimizer, peak learning rate $3 \times 10^{-4}$, cosine decay,
-batch size 512, over 3 epochs on the instruction mix.
-
-\subsection{RLHF and Constitutional Alignment}
-
-A lightweight RLHF pass using PPO with a 0.6B reward model (trained separately)
-is applied for 10K steps to reduce harmful outputs and improve instruction adherence,
-keeping the KL divergence from the SFT checkpoint below 0.1 nats.
+The deployment artifacts use standard post-training quantization (e.g., llama.cpp's Q4\_K\_M and
+Q8\_0 schemes, and MLX 4-bit) applied to the released weights. We do not perform the
+``quantization-aware training from epoch 1'' described in earlier versions of this whitepaper; the
+shipped artifact is the released Qwen3-8B quantized post hoc with widely used GGUF/MLX recipes.
+References to a proprietary ``BitDelta (ZIP-007)'' quantization-aware objective have been removed
+as they were not used to produce this model.
 
 %% -----------------------------------------------------------------------
 \section{Evaluation}
 \label{sec:eval}
 
-\subsection{Language Understanding}
+\paragraph{On benchmark numbers.} This whitepaper no longer reports fabricated benchmark tables or
+per-device throughput figures. Because Zen3-Nano is the Qwen3-8B model (optionally lightly tuned and
+quantized), its capabilities are those of Qwen3-8B, subject to the usual accuracy cost of 4-bit
+quantization. For rigorous, independently reproducible results on Qwen3 models (MMLU, GSM8K, MATH,
+HumanEval, multilingual, and long-context), see the official Qwen3 technical report
+\cite{qwen3report} and the Qwen3-8B model card \cite{qwen3hf}. Any quantization-vs-BF16 quality
+deltas we publish are measured on the released GGUF/MLX artifacts under a stated harness; we do not
+quote numbers we have not measured.
 
-\begin{table}[H]
-\centering
-\caption{Zen3-Nano vs. sub-1B baselines on core language benchmarks}
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Model} & \textbf{Params} & \textbf{MMLU} & \textbf{TriviaQA} & \textbf{HellaSwag} \\
-\midrule
-Prior Zen-Nano     & 0.5B & 39.1 & 53.4 & 61.2 \\
-Zen2-Nano          & 0.6B & 43.7 & 57.8 & 66.4 \\
-\textbf{Zen3-Nano} & \textbf{0.6B} & \textbf{47.3} & \textbf{61.2} & \textbf{70.8} \\
-\bottomrule
-\end{tabular}
-\label{tab:lang}
-\end{table}
-
-\subsection{Mathematical Reasoning}
-
-\begin{table}[H]
-\centering
-\caption{Mathematical reasoning benchmarks}
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Model} & \textbf{GSM8K} & \textbf{MATH} & \textbf{MGSM (avg)} & \textbf{ARC-C} \\
-\midrule
-Zen-Nano     & 38.2 & 11.3 & 31.4 & 54.1 \\
-Zen2-Nano    & 44.6 & 15.7 & 38.9 & 59.3 \\
-\textbf{Zen3-Nano} & \textbf{52.4} & \textbf{20.1} & \textbf{46.2} & \textbf{64.7} \\
-\bottomrule
-\end{tabular}
-\label{tab:math}
-\end{table}
-
-\subsection{Code Generation}
-
-\begin{table}[H]
-\centering
-\caption{Code generation benchmarks (pass@1)}
-\begin{tabular}{lccc}
-\toprule
-\textbf{Model} & \textbf{HumanEval} & \textbf{MBPP} & \textbf{LiveCodeBench} \\
-\midrule
-Zen-Nano     & 28.0 & 33.2 & 12.4 \\
-Zen2-Nano    & 34.1 & 40.5 & 18.7 \\
-\textbf{Zen3-Nano} & \textbf{42.7} & \textbf{49.3} & \textbf{26.1} \\
-\bottomrule
-\end{tabular}
-\label{tab:code}
-\end{table}
-
-\subsection{Inference Performance}
-
-\begin{table}[H]
-\centering
-\caption{Inference throughput across hardware targets (4-bit quantized)}
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Hardware} & \textbf{Precision} & \textbf{Tok/s} & \textbf{RAM (MB)} & \textbf{Latency (ms/tok)} \\
-\midrule
-Apple A16 Bionic      & INT4 & 2800 & 248 & 0.36 \\
-Snapdragon 8 Gen 3    & INT4 & 2340 & 248 & 0.43 \\
-Raspberry Pi 5        & INT4 &  420 & 248 & 2.38 \\
-WASM SIMD (browser)   & INT4 &  310 & 248 & 3.23 \\
-x86-64 (laptop CPU)   & INT4 & 1100 & 248 & 0.91 \\
-NVIDIA RTX 4090       & FP16 & 8400 & 950 & 0.12 \\
-\bottomrule
-\end{tabular}
-\label{tab:perf}
-\end{table}
-
-\subsection{Multilingual Performance}
-
-\begin{table}[H]
-\centering
-\caption{Multilingual benchmark (FLORES-200, spBLEU)}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Language Pair} & \textbf{Zen3-Nano} & \textbf{Zen2-Nano} \\
-\midrule
-English $\to$ Chinese   & 24.3 & 20.1 \\
-English $\to$ Spanish   & 31.8 & 27.4 \\
-English $\to$ Arabic    & 18.9 & 14.7 \\
-English $\to$ Japanese  & 21.4 & 17.2 \\
-Average (50 pairs)      & 22.6 & 18.4 \\
-\bottomrule
-\end{tabular}
-\label{tab:multilingual}
-\end{table}
+\paragraph{Right-sizing for edge.} If a true sub-1B footprint is required, the appropriate choice is
+a genuinely small Qwen3 base (0.6B/1.7B/4B), not an 8B model relabeled ``Nano.'' Published Qwen3
+results for those tiers \cite{qwen3report} should be used to set expectations rather than the
+fabricated figures previously printed here.
 
 %% -----------------------------------------------------------------------
 \section{Related Work}
 \label{sec:related}
 
-\subsection{Small Language Models}
-
-Research on sub-1B language models has accelerated as mobile deployment became
-commercially viable. Early work demonstrated that aggressive distillation from
-multi-billion parameter teachers could recover a substantial fraction of performance
-at a fraction of the parameter count~\cite{hinton2015distilling}. Subsequent work
-explored architectural modifications specifically suited to on-device constraints,
-including weight sharing, structured pruning, and low-rank factorization.
-
-\subsection{Quantization-Aware Training}
-
-Post-training quantization (PTQ) has become the default for edge deployment, but
-accuracy degradation at 4-bit is nontrivial for small models where the per-parameter
-information density is already high. BitDelta (ZIP-007) addresses this by encoding
-quantization error as an explicit training signal, showing that models trained
-quantization-natively outperform PTQ equivalents by 2--5 percentage points on
-reasoning benchmarks at 4-bit precision.
-
-\subsection{Knowledge Distillation Hierarchies}
-
-Prior work on hierarchical distillation~\cite{mirzadeh2020improved} demonstrated that
-using an intermediate ``teacher assistant'' model reduces the capacity gap and improves
-distillation efficiency. Zen3-Nano extends this to a three-level cascade, exploiting
-the full Zen family model hierarchy.
+Knowledge distillation \cite{hinton2015distilling} and teacher-assistant cascades
+\cite{mirzadeh2020improved} are well-established techniques for producing smaller models; however,
+Zen3-Nano as shipped is not the product of such a pipeline---it is the Qwen3-8B base, optionally
+lightly tuned and quantized. Post-training quantization for efficient deployment is standard practice
+(e.g., the GGUF schemes used by llama.cpp). The underlying base model belongs to the Qwen3 series
+\cite{qwen3report}, which provides a coherent family of dense (0.6B--32B) and MoE models under
+Apache-2.0.
 
 %% -----------------------------------------------------------------------
 \section{Deployment and Runtime}
 \label{sec:deploy}
 
-\subsection{Supported Runtimes}
+Because Zen3-Nano is architecturally Qwen3-8B, it runs on any Qwen3-compatible runtime:
 
-Zen3-Nano ships with native support for:
 \begin{itemize}
-\item \textbf{llama.cpp} --- GGUF format, Q4\_K\_M quantization
-\item \textbf{ONNX Runtime} --- optimized for ARM and x86 SIMD
-\item \textbf{WebAssembly} --- via wasm-pack compiled inference engine
-\item \textbf{Core ML} --- iOS/macOS native accelerated inference
-\item \textbf{TensorFlow Lite} --- Android NPU acceleration
+\item \textbf{llama.cpp} --- GGUF format (Q4\_K\_M, Q8\_0).
+\item \textbf{MLX} --- Apple Silicon, 4-bit.
+\item \textbf{ONNX Runtime} --- ARM and x86 SIMD.
+\item \textbf{Hugging Face Transformers / vLLM} --- BF16 reference weights.
 \end{itemize}
 
 \subsection{Context Length}
 
-Default context window: 8192 tokens (configurable to 32K via YaRN at cost of
-increased RAM). At 32K context, KV cache occupies approximately 64 MB at INT8.
+Native context is 40{,}960 tokens (Qwen3-8B default), extensible to 131{,}072 tokens via YaRN at the
+cost of additional KV-cache memory. Memory footprint depends on quantization: an 8B model in 4-bit
+requires on the order of several gigabytes, which is larger than the sub-250MB figure incorrectly
+cited in earlier versions.
 
 \subsection{API Compatibility}
 
-Zen3-Nano exposes an OpenAI-compatible API when deployed via the Zen LM inference
-server, enabling drop-in replacement for any OpenAI SDK client.
+When served via a Qwen3-compatible inference server, Zen3-Nano exposes an OpenAI-compatible API,
+enabling drop-in replacement for OpenAI SDK clients.
+
+%% -----------------------------------------------------------------------
+\section{Limitations}
+\label{sec:limitations}
+
+Zen3-Nano inherits the limitations of Qwen3-8B and of autoregressive models generally: factual
+hallucination, degraded performance on long multi-step reasoning, and incomplete safety alignment.
+Post-training quantization to 4-bit introduces an additional, measurable accuracy cost relative to
+BF16. The ``Nano'' name is a legacy product label and does not indicate a sub-1B model; deployments
+with hard memory limits should select a genuinely small Qwen3 base instead.
 
 %% -----------------------------------------------------------------------
 \section{Conclusion}
 \label{sec:conclusion}
 
-Zen3-Nano establishes a new state of the art for sub-1B parameter language models
-through hierarchical Zen MoDE distillation, quantization-native training, and
-architectural refinements that maximize inference efficiency on ARM-class hardware.
-The model achieves MMLU 47.3\%, TriviaQA 61.2\%, and GSM8K 52.4\% --- results
-that would have required 3--7B parameter models in prior generations --- while
-fitting within 250 MB at 4-bit precision and achieving 2800 tok/s on Apple A16
-Bionic.
-
-Future work will target 1M token context windows via ring attention approximations
-suitable for low-memory hardware, and extended multimodal understanding via
-lightweight vision adapters compatible with the Zen3-Omni decoder.
+Zen3-Nano, as released, is the Apache-2.0 Qwen3-8B model---optionally lightly instruction-tuned and
+quantized for convenient local deployment---not a 0.6B from-scratch ``Zen MoDE'' model. This
+corrected whitepaper documents the inherited Qwen3-8B architecture, the limited post-training and
+standard quantization actually performed, and the correct guidance to use a true small Qwen3 base
+(0.6B/1.7B/4B) when a sub-1B edge footprint is required. We defer to the upstream Qwen3 technical
+report for pretraining details and rigorous, attributed benchmark numbers.
 
 \section*{Acknowledgments}
 
-The authors thank the Zoo Labs Foundation for compute allocation and the DSO
-research network for benchmark curation and evaluation infrastructure.
+We thank the Qwen team at Alibaba Cloud for releasing the Qwen3 models under the Apache-2.0 license,
+and the maintainers of llama.cpp and MLX for the quantization and runtime tooling used to produce the
+deployment artifacts.
 
 \bibliographystyle{plain}
 \begin{thebibliography}{9}
+
+\bibitem{qwen3report}
+Qwen Team, Alibaba Cloud,
+``Qwen3 Technical Report,''
+\textit{arXiv:2505.09388}, 2025.
+
+\bibitem{qwen3hf}
+Qwen Team,
+``Qwen3-8B model card and configuration,''
+Hugging Face, \url{https://huggingface.co/Qwen/Qwen3-8B}, 2025.
 
 \bibitem{hinton2015distilling}
 G. Hinton, O. Vinyals, and J. Dean,
@@ -363,16 +259,25 @@ S. I. Mirzadeh et al.,
 ``Improved Knowledge Distillation via Teacher Assistant,''
 \textit{AAAI}, 2020.
 
-\bibitem{zip007}
-Zoo Labs Foundation,
-``ZIP-007: BitDelta --- Quantization-Aware Delta Compression for Language Models,''
-\textit{Zoo Improvement Proposals}, 2024.
-\href{https://zips.zoo.ngo/zip-007}{zips.zoo.ngo/zip-007}
+\bibitem{ainslie2023gqa}
+J. Ainslie et al.,
+``GQA: Training Generalized Multi-Query Transformer Models,''
+\textit{EMNLP}, 2023.
 
-\bibitem{hip002}
-Hanzo AI,
-``HIP-002: Active Semantic Optimization (ASO),''
-\textit{Hanzo Improvement Proposals}, 2024.
+\bibitem{su2021rope}
+J. Su et al.,
+``RoFormer: Enhanced Transformer with Rotary Position Embedding,''
+\textit{arXiv:2104.09864}, 2021.
+
+\bibitem{shazeer2020glu}
+N. Shazeer,
+``GLU Variants Improve Transformer,''
+\textit{arXiv:2002.05202}, 2020.
+
+\bibitem{peng2023yarn}
+B. Peng et al.,
+``YaRN: Efficient Context Window Extension of Large Language Models,''
+\textit{arXiv:2309.00071}, 2023.
 
 \end{thebibliography}
 
